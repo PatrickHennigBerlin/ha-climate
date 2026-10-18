@@ -147,7 +147,7 @@ class KlimaplanCard extends HTMLElement {
   // --------------------------------------------------------------- Rendering
   _render() {
     if (!this._config) return;
-    const title = this._config.title ?? "Kühlen";
+    const title = this._config.title ?? "Kühlung";
     let body;
     if (this._error && !this._data) body = `<div class="err">Klimaplan nicht erreichbar: ${esc(this._error)}</div>`;
     else if (!this._data) body = `<div class="muted pad">Lade …</div>`;
