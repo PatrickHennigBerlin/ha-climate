@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.1.0";
+const KP_VERSION = "0.1.1";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
@@ -147,7 +147,7 @@ class KlimaplanCard extends HTMLElement {
   // --------------------------------------------------------------- Rendering
   _render() {
     if (!this._config) return;
-    const title = this._config.title ?? "Klima";
+    const title = this._config.title ?? "Kühlen";
     let body;
     if (this._error && !this._data) body = `<div class="err">Klimaplan nicht erreichbar: ${esc(this._error)}</div>`;
     else if (!this._data) body = `<div class="muted pad">Lade …</div>`;
@@ -225,8 +225,8 @@ class KlimaplanCard extends HTMLElement {
         </span>
         ${chip(d.hot, "mdi:white-balance-sunny", d.hot ? "Hitzetag" : "kein Hitzetag", `Hitzetag ab über ${lim} °C, endet unter ${off} °C`, "sun")}
         ${chip(d.present_today, d.anyone_home ? "mdi:home-account" : "mdi:home-export-outline",
-          d.anyone_home ? "zu Hause" : d.present_today ? "unterwegs" : "nicht da",
-          d.present_today ? "Heute jemand da gewesen – kein Urlaub" : "Heute noch niemand zu Hause – Automatik ruht")}
+          d.anyone_home ? "zu Hause" : d.present_today ? "unterwegs · heute da gewesen" : "heute niemand da",
+          d.present_today ? `Heute nach ${s.presence_cutoff} Uhr war schon jemand zu Hause – kein Urlaub, Hitzeschutz darf laufen` : `Heute nach ${s.presence_cutoff} Uhr noch niemand zu Hause – Urlaub angenommen, Automatik ruht`)}
         <button class="pill btn ${s.enabled ? "on" : ""}" data-set="enabled" title="Automatik insgesamt">
           <ha-icon icon="${s.enabled ? "mdi:robot" : "mdi:robot-off-outline"}"></ha-icon>Automatik ${s.enabled ? "an" : "aus"}
         </button>
@@ -265,10 +265,18 @@ class KlimaplanCard extends HTMLElement {
 
   _planLine(room) {
     const s = room.status;
-    if (!room.plan_enabled) return room.protect ? "Kein Zeitplan · Hitzeschutz an" : "Kein Zeitplan · kein Hitzeschutz";
-    if (s.window) return `Zeitplan jetzt bis ${s.window.end} · ${fmtT(s.window.temp)} °C`;
-    if (s.next_window) return `Zeitplan ${dayText(s.next_window.at)}–${s.next_window.end} · ${fmtT(s.next_window.temp)} °C`;
+    const set = this._data.settings;
+    const d = set.start_delta;
+    if (!room.plan_enabled || !set.plan_enabled) return "Kein Zeitplan";
+    if (s.window) return `Zeitplan jetzt bis ${s.window.end} · ${fmtT(s.window.temp)} °C (an ab ${fmtT(s.window.temp + d)} °C)`;
+    if (s.next_window) return `Zeitplan ${dayText(s.next_window.at)}–${s.next_window.end} · ${fmtT(s.next_window.temp)} °C (an ab ${fmtT(s.next_window.temp + d)} °C)`;
     return "Zeitplan leer";
+  }
+
+  _protectLine(room) {
+    const set = this._data.settings;
+    if (!room.protect || !set.protect_enabled) return "Kein Hitzeschutz";
+    return `Hitzeschutz ${fmtT(set.protect_temp)} °C (an ab ${fmtT(set.protect_temp + set.start_delta)} °C)`;
   }
 
   _renderTile(room) {
@@ -313,6 +321,7 @@ class KlimaplanCard extends HTMLElement {
           ${fan.canAuto ? `<button class="chip sm ${fan.autoOn ? "on" : ""}" data-fan="auto" data-room="${room.id}">Auto</button>` : ""}
           ${fan.levels.map((f) => `<button class="chip sm ${!fan.autoOn && fan.current === f ? "on" : ""}" data-fan="${esc(f)}" data-room="${room.id}">${esc(FAN_LABEL(f))}</button>`).join("")}
         </div>
+        <div class="next"><ha-icon icon="mdi:shield-sun-outline"></ha-icon>${esc(this._protectLine(room))}</div>
         <div class="next"><ha-icon icon="mdi:calendar-clock"></ha-icon>${esc(this._planLine(room))}</div>
       </div>`;
   }
@@ -417,11 +426,12 @@ class KlimaplanCard extends HTMLElement {
       <div class="autotab">
         <div class="rule">
           <ha-icon icon="mdi:information-outline"></ha-icon>
-          <div>Gekühlt wird nur an <b>Hitzetagen</b> (außen über ${fmtT(s.outside_limit, 1)} °C, Ende unter ${fmtT(s.outside_limit - s.outside_hyst, 1)} °C),
-            wenn seit ${esc(s.presence_cutoff)} Uhr jemand zu Hause war (kein Urlaub) und die Sperre aus ist.
-            Ein Gerät startet erst bei Ist ≥ Soll + ${fmtT(s.start_delta)} K und kühlt dann auf den Soll aus Zeitplan oder Hitzeschutz –
-            es gilt der niedrigere. Sind alle weg, endet der Zeitplan; was Klimaplan eingeschaltet hat, geht dann aus
-            oder läuft im Hitzeschutz weiter.</div>
+          <div><b>Kein Urlaub</b> = heute nach ${esc(s.presence_cutoff)} Uhr war schon mal jemand zu Hause. Danach darf gekühlt werden, auch wenn ihr tagsüber arbeitet.<br>
+            <b>Hitzeschutz</b> (auch wenn niemand da ist): außen über ${fmtT(s.outside_limit, 1)} °C und Ist mindestens ${fmtT(s.start_delta)} K über ${fmtT(s.protect_temp)} °C
+            → Kühlen auf ${fmtT(s.protect_temp)} °C.<br>
+            <b>Zeitplan</b> (nur wenn jemand zu Hause ist): im Zeitfenster, außen über ${fmtT(s.outside_limit, 1)} °C und Ist mindestens ${fmtT(s.start_delta)} K über dem Plan-Soll
+            → Kühlen auf den Plan-Soll. Sind beide weg, endet der Zeitplan.<br>
+            Hitzetag endet unter ${fmtT(s.outside_limit - s.outside_hyst, 1)} °C. Gelten beide, zählt der niedrigere Soll. Klimaplan schaltet nur Geräte ein, die aus sind, und nur selbst eingeschaltete wieder aus.</div>
         </div>
         <div class="tgrid">
           ${tog("protect_enabled", "Hitzeschutz", "alle Räume mit Hitzeschutz-Haken")}

@@ -242,3 +242,27 @@ async def test_websocket(hass, hass_ws_client, clock):
     await ws.send_json({"id": 3, "type": "klimaplan/update_room", "room_id": "klima_wohnzimmer", "plan_enabled": False})
     msg = await ws.receive_json()
     assert msg["success"] and msg["result"]["rooms"]["klima_wohnzimmer"]["plan_enabled"] is False
+
+
+async def test_plan_needs_outside_and_delta(hass, clock):
+    env = await _setup(hass, clock, outside="29")
+    await hass.services.async_call(DOMAIN, "update_room", {"room": "Wohnzimmer", "protect": False}, blocking=True)
+    env.klima(current_temperature=26)
+    await env.at(65)                         # im Fenster, aber außen nicht über 30
+    assert not env.c("set_temperature")
+    env.klima(current_temperature=24.5)      # Plan 23: erst ab 25
+    env.set("sensor.aussen", "30.5")
+    await env.at(66)
+    assert not env.c("set_temperature")
+    env.klima(current_temperature=25)
+    await env.at(67)
+    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 23.0}
+
+
+async def test_present_today_while_at_work(hass, clock):
+    env = await _setup(hass, clock)
+    await env.at(-600)                       # 07:00 zu Hause
+    env.set("person.patrick", "not_home")    # zur Arbeit
+    env.klima(current_temperature=27)
+    await env.at(-300)                       # 12:00, keiner da -> Hitzeschutz läuft trotzdem
+    assert env.c("set_temperature")[-1].data["temperature"] == 25.0
