@@ -1,0 +1,391 @@
+"""Klimaplan: Räume, Pläne, Hitzeschutz – entscheidet, wann ein Klimagerät kühlt."""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime, timedelta
+from typing import Any
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_ENTITY_ID, STATE_HOME, STATE_ON
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    CONF_BLOCK,
+    CONF_OUTSIDE,
+    CONF_PERSONS,
+    CONF_VACATION,
+    SIGNAL_UPDATED,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+)
+from .logic import (
+    DAYS,
+    DEFAULT_SETTINGS,
+    PlanError,
+    climate_setpoint,
+    default_plan,
+    hot_now,
+    may_start,
+    next_window,
+    normalize_plan,
+    normalize_settings,
+    normalize_windows,
+    presence_threshold,
+    room_target,
+    window_at,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+COOL = "cool"
+OFF = "off"
+SETTLE = timedelta(minutes=2)   # so lange nach eigenem Schalten keine „Handänderung“ annehmen
+
+
+def room_id_from_entity(entity_id: str) -> str:
+    return re.sub(r"[^a-z0-9_]", "_", entity_id.split(".", 1)[-1].lower())
+
+
+class KlimaplanManager:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.hass = hass
+        self.entry = entry
+        self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
+        self.rooms: dict[str, dict[str, Any]] = {}
+        self.settings: dict[str, Any] = dict(DEFAULT_SETTINGS)
+        self.state: dict[str, dict[str, Any]] = {}   # je Raum {owned, since, temp, fan, paused, manual_temp}
+        self.last_home: str | None = None            # ISO-Zeit, zuletzt jemand zu Hause
+        self.hot: bool = False
+        self._unsubs: list[CALLBACK_TYPE] = []
+
+    # ------------------------------------------------------------------ Optionen
+    @property
+    def outside_entity(self) -> str | None:
+        return self.entry.options.get(CONF_OUTSIDE) or None
+
+    @property
+    def persons(self) -> list[str]:
+        return list(self.entry.options.get(CONF_PERSONS) or [])
+
+    @property
+    def vacation_entity(self) -> str | None:
+        return self.entry.options.get(CONF_VACATION) or None
+
+    @property
+    def block_entity(self) -> str | None:
+        return self.entry.options.get(CONF_BLOCK) or None
+
+    def _is_on(self, entity_id: str | None) -> bool:
+        if not entity_id:
+            return False
+        st = self.hass.states.get(entity_id)
+        return st is not None and st.state == STATE_ON
+
+    def outside_value(self) -> float | None:
+        ent = self.outside_entity
+        st = self.hass.states.get(ent) if ent else None
+        try:
+            return float(st.state) if st is not None else None
+        except ValueError:
+            return None
+
+    def anyone_home(self) -> bool:
+        persons = self.persons
+        if not persons:
+            return True
+        return any((st := self.hass.states.get(p)) is not None and st.state == STATE_HOME for p in persons)
+
+    def present_today(self, now: datetime) -> bool:
+        if self._is_on(self.vacation_entity):
+            return False
+        if not self.persons:
+            return True
+        if self.anyone_home():
+            return True
+        last = dt_util.parse_datetime(self.last_home) if self.last_home else None
+        return last is not None and last >= presence_threshold(now, self.settings["presence_cutoff"])
+
+    def blocked(self) -> bool:
+        return self._is_on(self.block_entity)
+
+    # ------------------------------------------------------------------ Speicher
+    async def async_load(self) -> None:
+        data = await self._store.async_load() or {}
+        self.rooms = data.get("rooms", {})
+        for room in self.rooms.values():
+            room["plan"] = normalize_plan(room.get("plan"))
+        try:
+            self.settings = normalize_settings(data.get("settings"))
+        except PlanError as err:
+            _LOGGER.warning("Klimaplan: Einstellungen zurückgesetzt (%s)", err)
+            self.settings = dict(DEFAULT_SETTINGS)
+        self.state = {rid: st for rid, st in (data.get("state") or {}).items() if rid in self.rooms}
+        self.last_home = data.get("last_home")
+        self.hot = bool(data.get("hot"))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"rooms": self.rooms, "settings": self.settings, "state": self.state,
+                "last_home": self.last_home, "hot": self.hot}
+
+    @callback
+    def _save(self) -> None:
+        self._store.async_delay_save(self.as_dict, 1)
+
+    async def async_flush(self) -> None:
+        await self._store.async_save(self.as_dict())
+
+    # ------------------------------------------------------------------ Start/Stop
+    async def async_start(self) -> None:
+        self._unsubs.append(async_track_time_change(self.hass, self._tick, second=15))
+        watch = [e for e in [self.outside_entity, self.vacation_entity, self.block_entity, *self.persons] if e]
+        if watch:
+            self._unsubs.append(async_track_state_change_event(self.hass, watch, self._changed_event))
+        await self.async_apply()
+
+    @callback
+    def async_stop(self) -> None:
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
+
+    async def _tick(self, now: datetime) -> None:
+        await self.async_apply()
+
+    async def _changed_event(self, event: Event) -> None:
+        await self.async_apply()
+
+    # ------------------------------------------------------------------ Status
+    def room_status(self, room_id: str, now: datetime | None = None) -> dict[str, Any]:
+        now = now or dt_util.now()
+        room = self.rooms[room_id]
+        klima = self.hass.states.get(room["climate"])
+        target = self._target(room, now)
+        st = self.state.get(room_id) or {}
+        nxt = next_window(room.get("plan") or {}, now) if room.get("plan_enabled") else None
+        win = window_at(room.get("plan") or {}, now) if room.get("plan_enabled") else None
+        return {
+            "room_id": room_id,
+            "name": room.get("name", room_id),
+            "climate": room["climate"],
+            "hvac": klima.state if klima else None,
+            "current_temp": klima.attributes.get("current_temperature") if klima else None,
+            "climate_temp": klima.attributes.get("temperature") if klima else None,
+            "target": target,
+            "window": win,
+            "next_window": {"at": nxt[0].isoformat(), **nxt[1]} if nxt else None,
+            "active": bool(st.get("owned")),
+            "since": st.get("since"),
+            "paused": bool(st.get("paused")),
+            "waiting": bool(target) and not st.get("owned") and not st.get("paused")
+                       and not may_start(klima.attributes.get("current_temperature") if klima else None,
+                                         target["temp"], self.settings["start_delta"]),
+        }
+
+    def full_state(self) -> dict[str, Any]:
+        now = dt_util.now()
+        return {
+            "settings": self.settings,
+            "options": {"outside_entity": self.outside_entity, "persons": self.persons,
+                        "vacation_entity": self.vacation_entity, "block_entity": self.block_entity},
+            "outside": self.outside_value(),
+            "hot": self.hot,
+            "present_today": self.present_today(now),
+            "anyone_home": self.anyone_home(),
+            "blocked": self.blocked(),
+            "rooms": {rid: {**room, "status": self.room_status(rid, now)} for rid, room in self.rooms.items()},
+            "now": now.isoformat(),
+        }
+
+    def _target(self, room: dict[str, Any], now: datetime) -> dict[str, Any] | None:
+        return room_target(room=room, settings=self.settings, now=now, hot=self.hot,
+                           present_today=self.present_today(now), anyone_home=self.anyone_home(),
+                           blocked=self.blocked())
+
+    # ------------------------------------------------------------------ Steuern
+    async def _call(self, domain: str, service: str, data: dict[str, Any]) -> bool:
+        try:
+            await self.hass.services.async_call(domain, service, data, blocking=True)
+            return True
+        except Exception as err:  # noqa: BLE001 – ein Raum soll andere nicht stoppen
+            _LOGGER.error("Klimaplan: %s.%s %s fehlgeschlagen: %s", domain, service, data, err)
+            return False
+
+    async def async_set_fan(self, room_id: str, fan: str | None) -> None:
+        """Lüfter setzen: 'auto' über fan_mode auto oder Auto-Schalter, sonst Stufe."""
+        if not fan:
+            return
+        room = self.rooms[room_id]
+        ent = room["climate"]
+        klima = self.hass.states.get(ent)
+        modes = list(klima.attributes.get("fan_modes") or []) if klima else []
+        auto_switch = room.get("fan_auto_switch")
+        if fan == "auto":
+            if "auto" in modes:
+                await self._call("climate", "set_fan_mode", {ATTR_ENTITY_ID: ent, "fan_mode": "auto"})
+            elif auto_switch:
+                await self._call(auto_switch.split(".", 1)[0], "turn_on", {ATTR_ENTITY_ID: auto_switch})
+            return
+        if auto_switch and self._is_on(auto_switch):
+            await self._call(auto_switch.split(".", 1)[0], "turn_off", {ATTR_ENTITY_ID: auto_switch})
+        if fan in modes:
+            await self._call("climate", "set_fan_mode", {ATTR_ENTITY_ID: ent, "fan_mode": fan})
+
+    async def async_apply(self) -> None:
+        now = dt_util.now()
+        changed = False
+        if self.persons and self.anyone_home():
+            self.last_home = now.isoformat()
+        hot = hot_now(self.hot, self.outside_value(), self.settings["outside_limit"], self.settings["outside_hyst"])
+        if hot != self.hot:
+            self.hot = hot
+            changed = True
+        for room_id, room in list(self.rooms.items()):
+            try:
+                changed |= await self._apply_room(room_id, room, now)
+            except (KeyError, PlanError) as err:
+                _LOGGER.error("Klimaplan: Raum %s fehlerhaft: %s", room_id, err)
+        if changed:
+            self._save()
+        async_dispatcher_send(self.hass, SIGNAL_UPDATED)
+
+    async def _apply_room(self, room_id: str, room: dict[str, Any], now: datetime) -> bool:
+        ent = room["climate"]
+        klima = self.hass.states.get(ent)
+        hvac = klima.state if klima is not None else None
+        if hvac in (None, "unavailable", "unknown"):
+            return False
+        st = self.state.setdefault(room_id, {"owned": False, "since": None, "temp": None, "fan": None,
+                                             "paused": None, "manual_temp": False})
+        target = self._target(room, now)
+        key = target["key"] if target else None
+        changed = False
+
+        # Pause endet, sobald sich die Quelle ändert (neues Fenster, Hitzeschutz vorbei …)
+        if st.get("paused") and st["paused"] != key:
+            st["paused"] = None
+            changed = True
+
+        started = dt_util.parse_datetime(st["since"]) if st.get("since") else None
+        settled = started is None or now - started >= SETTLE
+
+        if st["owned"]:
+            if hvac != COOL and settled:
+                # von Hand aus- oder umgestellt (auch durch „Außer Haus“/„Schlafen gehen“): in Ruhe lassen
+                st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False, paused=key)
+                _LOGGER.info("Klimaplan: %s von Hand geändert – Pause bis zum nächsten Wechsel", ent)
+                return True
+            if target is None:
+                if hvac == COOL:
+                    await self._call("climate", "set_hvac_mode", {ATTR_ENTITY_ID: ent, "hvac_mode": OFF})
+                    _LOGGER.info("Klimaplan: %s aus", ent)
+                st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False)
+                return True
+            value = climate_setpoint(target["temp"], dict(klima.attributes))
+            current_set = klima.attributes.get("temperature")
+            temp_at = dt_util.parse_datetime(st["temp_at"]) if st.get("temp_at") else started
+            temp_settled = temp_at is None or now - temp_at >= SETTLE
+            if temp_settled and st.get("temp") is not None and current_set is not None \
+                    and abs(float(current_set) - float(st["temp"])) > 0.01 and not st.get("manual_temp"):
+                st["manual_temp"] = True   # Soll am Gerät/Pad geändert: bis zum nächsten Wechsel behalten
+                changed = True
+            if st.get("key") != key:
+                st["manual_temp"] = False
+                st["key"] = key
+                changed = True
+            if not st.get("manual_temp") and st.get("temp") != value:
+                if await self._call("climate", "set_temperature", {ATTR_ENTITY_ID: ent, "temperature": value}):
+                    st["temp"] = value
+                    st["temp_at"] = now.isoformat()
+                    changed = True
+            if target.get("fan") and st.get("fan") != target["fan"]:
+                await self.async_set_fan(room_id, target["fan"])
+                st["fan"] = target["fan"]
+                changed = True
+            return changed
+
+        if target is None or st.get("paused") == key:
+            return changed
+        if hvac != OFF:
+            return changed   # läuft schon (von Hand oder Zuheizen) – nicht übernehmen
+        if not may_start(klima.attributes.get("current_temperature"), target["temp"], self.settings["start_delta"]):
+            return changed
+        value = climate_setpoint(target["temp"], dict(klima.attributes))
+        if await self._call("climate", "set_temperature",
+                            {ATTR_ENTITY_ID: ent, "hvac_mode": COOL, "temperature": value}):
+            st.update(owned=True, since=now.isoformat(), temp=value, temp_at=now.isoformat(), fan=None,
+                      paused=None, manual_temp=False, key=key)
+            _LOGGER.info("Klimaplan: %s kühlt (%s °C, %s)", ent, value, target["source"])
+            if target.get("fan"):
+                await self.async_set_fan(room_id, target["fan"])
+                st["fan"] = target["fan"]
+            return True
+        return changed
+
+    # ------------------------------------------------------------------ Änderungen
+    async def _changed(self, reload: bool = False) -> None:
+        self._save()
+        await self.async_apply()
+        if reload:
+            await self.async_flush()
+            self.hass.async_create_task(self.hass.config_entries.async_reload(self.entry.entry_id))
+
+    async def async_add_room(self, climate: str, name: str | None = None, fan_auto_switch: str | None = None,
+                             plan_enabled: bool = False, protect: bool = True) -> str:
+        if not climate.startswith("climate."):
+            raise PlanError("Klimagerät muss climate.* sein")
+        room_id = room_id_from_entity(climate)
+        if room_id in self.rooms:
+            raise PlanError(f"Raum {room_id} gibt es schon")
+        state = self.hass.states.get(climate)
+        self.rooms[room_id] = {
+            "name": name or (state.name if state else room_id),
+            "climate": climate,
+            "fan_auto_switch": fan_auto_switch or None,
+            "plan_enabled": bool(plan_enabled),
+            "protect": bool(protect),
+            "plan": default_plan(),
+        }
+        await self._changed(reload=True)
+        return room_id
+
+    async def async_update_room(self, room_id: str, **fields: Any) -> None:
+        room = self.rooms[room_id]
+        reload = False
+        if fields.get("name") is not None:
+            room["name"] = fields["name"]
+            reload = True
+        if fields.get("fan_auto_switch") is not None:
+            room["fan_auto_switch"] = fields["fan_auto_switch"] or None
+        for key in ("plan_enabled", "protect"):
+            if fields.get(key) is not None:
+                room[key] = bool(fields[key])
+        await self._changed(reload=reload)
+
+    async def async_remove_room(self, room_id: str) -> None:
+        self.rooms.pop(room_id)
+        self.state.pop(room_id, None)
+        await self._changed(reload=True)
+
+    async def async_set_day(self, room_id: str, day: str, windows: list, copy_to: list[str] | None = None) -> None:
+        if day not in DAYS:
+            raise PlanError(f"Unbekannter Tag {day}")
+        norm = normalize_windows(windows)
+        plan = self.rooms[room_id]["plan"]
+        for d in [day, *(copy_to or [])]:
+            if d in DAYS:
+                plan[d] = [dict(w) for w in norm]
+        await self._changed()
+
+    async def async_set_plan(self, room_id: str, plan: dict[str, Any]) -> None:
+        self.rooms[room_id]["plan"] = normalize_plan(plan)
+        await self._changed()
+
+    async def async_set_settings(self, cfg: dict[str, Any]) -> None:
+        self.settings = normalize_settings({**self.settings, **cfg})
+        await self._changed()

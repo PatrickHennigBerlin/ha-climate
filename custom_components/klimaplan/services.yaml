@@ -1,0 +1,93 @@
+add_room:
+  fields:
+    climate:
+      required: true
+      selector:
+        entity:
+          domain: climate
+    name:
+      selector:
+        text:
+    fan_auto_switch:
+      selector:
+        entity:
+          domain:
+            - switch
+            - input_boolean
+    plan_enabled:
+      selector:
+        boolean:
+    protect:
+      selector:
+        boolean:
+update_room:
+  fields:
+    room:
+      required: true
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    fan_auto_switch:
+      selector:
+        entity:
+          domain:
+            - switch
+            - input_boolean
+    plan_enabled:
+      selector:
+        boolean:
+    protect:
+      selector:
+        boolean:
+set_day:
+  fields:
+    room:
+      required: true
+      selector:
+        text:
+    day:
+      required: true
+      selector:
+        select:
+          options: [mon, tue, wed, thu, fri, sat, sun]
+    windows:
+      required: true
+      example: '[{"start": "18:00", "end": "21:00", "temp": 23, "fan": "auto"}]'
+      selector:
+        object:
+    copy_to:
+      selector:
+        select:
+          multiple: true
+          options: [mon, tue, wed, thu, fri, sat, sun]
+set_settings:
+  fields:
+    enabled:
+      selector:
+        boolean:
+    plan_enabled:
+      selector:
+        boolean:
+    protect_enabled:
+      selector:
+        boolean:
+    outside_limit:
+      selector:
+        number: {min: 15, max: 45, step: 0.5, unit_of_measurement: "°C"}
+    outside_hyst:
+      selector:
+        number: {min: 0, max: 10, step: 0.5, unit_of_measurement: K}
+    start_delta:
+      selector:
+        number: {min: 0, max: 10, step: 0.5, unit_of_measurement: K}
+    protect_temp:
+      selector:
+        number: {min: 16, max: 30, step: 0.5, unit_of_measurement: "°C"}
+    protect_fan:
+      selector:
+        text:
+    presence_cutoff:
+      selector:
+        time:

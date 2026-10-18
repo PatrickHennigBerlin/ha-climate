@@ -1,0 +1,151 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Klimaplan",
+        "description": "Cooling schedules and heat protection for air conditioners.",
+        "data": {
+          "outside_entity": "Outdoor temperature",
+          "persons": "Persons (presence)",
+          "vacation_entity": "Vacation (optional, on = vacation)",
+          "block_entity": "Block cooling while on (optional, e.g. heating season)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Already configured.",
+      "single_instance_allowed": "Already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Klimaplan",
+        "data": {
+          "outside_entity": "Outdoor temperature",
+          "persons": "Persons (presence)",
+          "vacation_entity": "Vacation (optional, on = vacation)",
+          "block_entity": "Block cooling while on (optional, e.g. heating season)"
+        }
+      }
+    }
+  },
+  "services": {
+    "add_room": {
+      "name": "Raum hinzufügen",
+      "description": "Klimagerät als Raum anlegen",
+      "fields": {
+        "climate": {
+          "name": "Klimagerät",
+          "description": "climate-Entität"
+        },
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "fan_auto_switch": {
+          "name": "Lüfter-Auto-Schalter",
+          "description": "optional, wenn das Gerät kein fan_mode auto hat"
+        },
+        "plan_enabled": {
+          "name": "Zeitplan",
+          "description": ""
+        },
+        "protect": {
+          "name": "Hitzeschutz",
+          "description": ""
+        }
+      }
+    },
+    "update_room": {
+      "name": "Raum ändern",
+      "description": "",
+      "fields": {
+        "room": {
+          "name": "Raum",
+          "description": "Raum-ID, Name oder climate-Entität"
+        },
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "fan_auto_switch": {
+          "name": "Lüfter-Auto-Schalter",
+          "description": ""
+        },
+        "plan_enabled": {
+          "name": "Zeitplan",
+          "description": ""
+        },
+        "protect": {
+          "name": "Hitzeschutz",
+          "description": ""
+        }
+      }
+    },
+    "set_day": {
+      "name": "Tagesplan setzen",
+      "description": "Kühlfenster eines Tages",
+      "fields": {
+        "room": {
+          "name": "Raum",
+          "description": ""
+        },
+        "day": {
+          "name": "Tag",
+          "description": "mon … sun"
+        },
+        "windows": {
+          "name": "Fenster",
+          "description": "Liste {start, end, temp, fan}"
+        },
+        "copy_to": {
+          "name": "Kopieren nach",
+          "description": ""
+        }
+      }
+    },
+    "set_settings": {
+      "name": "Einstellungen",
+      "description": "Automatik, Grenzen, Hitzeschutz",
+      "fields": {
+        "enabled": {
+          "name": "enabled",
+          "description": ""
+        },
+        "plan_enabled": {
+          "name": "plan_enabled",
+          "description": ""
+        },
+        "protect_enabled": {
+          "name": "protect_enabled",
+          "description": ""
+        },
+        "outside_limit": {
+          "name": "outside_limit",
+          "description": ""
+        },
+        "outside_hyst": {
+          "name": "outside_hyst",
+          "description": ""
+        },
+        "start_delta": {
+          "name": "start_delta",
+          "description": ""
+        },
+        "protect_temp": {
+          "name": "protect_temp",
+          "description": ""
+        },
+        "protect_fan": {
+          "name": "protect_fan",
+          "description": ""
+        },
+        "presence_cutoff": {
+          "name": "presence_cutoff",
+          "description": ""
+        }
+      }
+    }
+  }
+}
