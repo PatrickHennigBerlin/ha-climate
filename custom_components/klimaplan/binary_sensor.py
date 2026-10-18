@@ -39,7 +39,9 @@ class KlimaplanHot(KlimaplanEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         s = self.manager.settings
         return {"aussen": self.manager.outside_value(), "grenze": s["outside_limit"],
-                "aus_unter": s["outside_limit"] - s["outside_hyst"]}
+                "heute_max_gemessen": self.manager.measured_max,
+                "heute_max_vorhersage": self.manager.forecast_max,
+                "vorhersage_benutzt": bool(s.get("use_forecast") and self.manager.forecast_entity)}
 
 
 class KlimaplanPresent(KlimaplanEntity, BinarySensorEntity):

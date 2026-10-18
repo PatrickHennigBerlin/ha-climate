@@ -194,7 +194,7 @@ def _register_services(hass: HomeAssistant) -> None:
         vol.Optional("protect_enabled"): cv.boolean,
         vol.Optional("plan_needs_home"): cv.boolean,
         vol.Optional("outside_limit"): vol.Coerce(float),
-        vol.Optional("outside_hyst"): vol.Coerce(float),
+        vol.Optional("use_forecast"): cv.boolean,
         vol.Optional("start_delta"): vol.Coerce(float),
         vol.Optional("protect_temp"): vol.Coerce(float),
         vol.Optional("protect_on"): vol.Coerce(float),

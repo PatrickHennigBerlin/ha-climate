@@ -7,7 +7,7 @@ Home-Assistant-Integration für Klimageräte im Sommer: **Bedienen** (Modus, Lü
 
 | | |
 |---|---|
-| **Hitzetag** | Außentemperatur über *Außengrenze* (Standard 30 °C). Endet erst unter Grenze − Hysterese (Standard 28 °C). |
+| **Hitzetag** | Heute außen schon über *Außengrenze* (Standard 30 °C) gemessen **oder** Vorhersage-Höchstwert für heute darüber (optional, Wetter-Entität). Gilt dann bis Mitternacht – abends abkühlen schaltet nichts ab. Grundbedingung für Hitzeschutz und Zeitplan. |
 | **Heute da** | Heute (ab 00:00) war eine Person zu Hause **oder** mindestens 2 verschiedene Bewegungsmelder haben ausgelöst → kein Urlaub. Optional zusätzlich ein Urlaubs-Schalter. Hitzeschutz und Zeitplan laufen nur an solchen Tagen. |
 | **Sperre** | Solange die Sperr-Entität an ist (z. B. `switch.heizperiode`), kühlt Klimaplan nicht automatisch. |
 | **Hitzeschutz** | Hitzetag + heute da + innen ≥ 28 °C → kühlen auf 25 °C, Lüfter Auto (Räume mit Hitzeschutz-Haken). Läuft auch tagsüber, wenn gerade niemand zu Hause ist. |
@@ -49,9 +49,9 @@ view: rooms           # rooms | plan | auto
 
 ## Entitäten
 
-- `switch.klimaplan_automatik`, `switch.klimaplan_zeitplane`, `switch.klimaplan_hitzeschutz`
+- `switch.klimaplan_automatik`, `switch.klimaplan_zeitplane`, `switch.klimaplan_hitzeschutz`, `switch.klimaplan_hitzetag_nach_vorhersage`, `switch.klimaplan_zeitplane_nur_wenn_jemand_zu_hause`
 - je Raum `switch.klimaplan_plan_<raum>`, `switch.klimaplan_hitzeschutz_<raum>`
-- `number.klimaplan_aussengrenze`, `…_aussen_hysterese`, `…_einschaltabstand`, `…_hitzeschutz_ab_innen`, `…_hitzeschutz_soll`, `…_bewegungsmelder_heute`
+- `number.klimaplan_aussengrenze`, `…_einschaltabstand`, `…_hitzeschutz_ab_innen`, `…_hitzeschutz_soll`, `…_bewegungsmelder_heute`
 - `binary_sensor.klimaplan_hitzetag`, `binary_sensor.klimaplan_anwesend_heute`, je Raum `binary_sensor.klimaplan_<raum>_kuhlt`
 - je Raum `sensor.klimaplan_<raum>_kuhl_soll` (Attribut `quelle`: Zeitplan / Hitzeschutz / aus)
 

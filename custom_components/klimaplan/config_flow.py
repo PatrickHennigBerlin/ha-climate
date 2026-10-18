@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
-from .const import CONF_BLOCK, CONF_MOTION, CONF_OUTSIDE, CONF_PERSONS, CONF_VACATION, DOMAIN
+from .const import CONF_BLOCK, CONF_FORECAST, CONF_MOTION, CONF_OUTSIDE, CONF_PERSONS, CONF_VACATION, DOMAIN
 
 
 def _opt(key: str, defaults: dict[str, Any]):
@@ -22,6 +22,7 @@ def _schema(defaults: dict[str, Any]) -> vol.Schema:
     return vol.Schema({
         _opt(CONF_OUTSIDE, defaults): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor"], device_class="temperature")),
+        _opt(CONF_FORECAST, defaults): selector.EntitySelector(selector.EntitySelectorConfig(domain=["weather"])),
         _opt(CONF_PERSONS, defaults): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["person", "device_tracker"], multiple=True)),
         _opt(CONF_MOTION, defaults): selector.EntitySelector(

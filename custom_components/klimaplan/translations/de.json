@@ -9,14 +9,16 @@
           "persons": "Personen (Anwesenheit)",
           "vacation_entity": "Urlaub (optional, an = Urlaub)",
           "block_entity": "Kühlen sperren, wenn an (optional, z. B. Heizperiode)",
-          "motion_entities": "Bewegungs-/Präsenzmelder (heute jemand da)"
+          "motion_entities": "Bewegungs-/Präsenzmelder (heute jemand da)",
+          "forecast_entity": "Wettervorhersage (optional)"
         },
         "data_description": {
-          "outside_entity": "Sensor für die Außentemperatur. Entscheidet über den Hitzetag.",
+          "outside_entity": "Außentemperatur. Wurde heute einmal über der Grenze gemessen, bleibt es bis Mitternacht Hitzetag.",
           "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Optional können Zeitpläne zusätzlich verlangen, dass gerade jemand zu Hause ist.",
           "motion_entities": "Alternativ zu den Personen: Haben heute genug verschiedene Melder ausgelöst (Anzahl in der Karte), gilt der Tag ebenfalls als „jemand da“.",
           "vacation_entity": "Optional. Ist diese Entität an, kühlt die Automatik nicht.",
-          "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer."
+          "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer.",
+          "forecast_entity": "Liegt der vorhergesagte Tageshöchstwert über der Grenze, ist schon morgens Hitzetag."
         }
       }
     },
@@ -34,14 +36,16 @@
           "persons": "Personen (Anwesenheit)",
           "vacation_entity": "Urlaub (optional, an = Urlaub)",
           "block_entity": "Kühlen sperren, wenn an (optional, z. B. Heizperiode)",
-          "motion_entities": "Bewegungs-/Präsenzmelder (heute jemand da)"
+          "motion_entities": "Bewegungs-/Präsenzmelder (heute jemand da)",
+          "forecast_entity": "Wettervorhersage (optional)"
         },
         "data_description": {
-          "outside_entity": "Sensor für die Außentemperatur. Entscheidet über den Hitzetag.",
+          "outside_entity": "Außentemperatur. Wurde heute einmal über der Grenze gemessen, bleibt es bis Mitternacht Hitzetag.",
           "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Optional können Zeitpläne zusätzlich verlangen, dass gerade jemand zu Hause ist.",
           "motion_entities": "Alternativ zu den Personen: Haben heute genug verschiedene Melder ausgelöst (Anzahl in der Karte), gilt der Tag ebenfalls als „jemand da“.",
           "vacation_entity": "Optional. Ist diese Entität an, kühlt die Automatik nicht.",
-          "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer."
+          "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer.",
+          "forecast_entity": "Liegt der vorhergesagte Tageshöchstwert über der Grenze, ist schon morgens Hitzetag."
         },
         "description": "Kühlpläne und Hitzeschutz für Klimageräte. Alles lässt sich später unter „Konfigurieren“ ändern; Grenzwerte und Räume stellst du in der Karte ein."
       }
@@ -142,10 +146,6 @@
           "name": "outside_limit",
           "description": ""
         },
-        "outside_hyst": {
-          "name": "outside_hyst",
-          "description": ""
-        },
         "start_delta": {
           "name": "start_delta",
           "description": ""
@@ -172,6 +172,10 @@
         },
         "plan_needs_home": {
           "name": "plan_needs_home",
+          "description": ""
+        },
+        "use_forecast": {
+          "name": "use_forecast",
           "description": ""
         }
       }

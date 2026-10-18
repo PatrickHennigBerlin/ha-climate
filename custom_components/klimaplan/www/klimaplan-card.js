@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.2.2";
+const KP_VERSION = "0.3.0";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
@@ -214,10 +214,6 @@ class KlimaplanCard extends HTMLElement {
   _renderHead() {
     const d = this._data;
     const s = d.settings;
-    const chip = (on, icon, label, title, cls = "") =>
-      `<span class="pill ${on ? "on" : ""} ${cls}" title="${esc(title)}"><ha-icon icon="${icon}"></ha-icon>${label}</span>`;
-    const lim = fmtT(s.outside_limit, 0);
-    const off = fmtT(s.outside_limit - s.outside_hyst, 0);
     return `
       <div class="hright">
         <span class="out ${d.hot ? "hot" : ""}" title="Außentemperatur">
@@ -436,12 +432,15 @@ class KlimaplanCard extends HTMLElement {
           <div class="gsd">Dazu: Automatik an und Sperre (${esc(this._st(d.options.block_entity)?.attributes?.friendly_name || "keine")}) aus. Den aktuellen Stand siehst du oben unter „Heute“.</div>
         <div class="sec">
           <div class="sh"><ha-icon icon="mdi:white-balance-sunny"></ha-icon>1 · Hitzetag</div>
-          <div class="sd">Ein Hitzetag ist, wenn es <b>außen</b> über der Grenze ist. Ohne Hitzetag kühlt die Automatik gar nicht – weder Hitzeschutz noch Zeitplan.
-            Der Hitzetag endet erst etwas tiefer, damit nichts ständig an und aus geht.</div>
+          <div class="sd">Hitzetag ist, wenn es <b>außen heute</b> schon über der Grenze war${d.options.forecast_entity ? " oder die Vorhersage für heute darüber liegt" : ""}.
+            Er gilt dann <b>den ganzen Tag bis Mitternacht</b> – kühlt es abends ab, laufen Zeitplan und Hitzeschutz trotzdem weiter.
+            Ohne Hitzetag kühlt die Automatik gar nicht – weder Hitzeschutz noch Zeitplan.</div>
           <div class="sgrid">
             ${num("outside_limit", "Hitzetag, wenn außen über", "°C", 0.5, 15, 45)}
-            ${num("outside_hyst", "endet erst unter Grenze minus", "K", 0.5, 0, 10, `= unter ${fmtT(s.outside_limit - s.outside_hyst)} °C`)}
+            ${d.options.forecast_entity ? `<label class="toggle"><input type="checkbox" data-s="use_forecast" ${s.use_forecast ? "checked" : ""}>
+              <span>auch nach Vorhersage <small class="muted">– schon morgens Hitzetag, wenn heute über ${fmtT(s.outside_limit, 0)} °C angesagt sind (gut für Wochenend-Pläne ab 10 Uhr)</small></span></label>` : ""}
           </div>
+          <div class="hint">Heute: gemessen max. ${fmtT(d.measured_max)} °C${d.options.forecast_entity ? ` · Vorhersage ${fmtT(d.forecast_max)} °C` : ""} · jetzt ${fmtT(d.outside)} °C</div>
         </div>
 
         <div class="sec">
@@ -517,7 +516,7 @@ class KlimaplanCard extends HTMLElement {
     if (motionAll && s.motion_min > 0) who += ` · Melder heute ${motionSeen}/${s.motion_min}`;
     const items = [
       [s.enabled, "Automatik", s.enabled ? "an" : "aus – nur Bedienung von Hand"],
-      [d.hot, "Hitzetag", `außen ${fmtT(d.outside)} °C, ${d.hot ? "über" : "nicht über"} ${fmtT(s.outside_limit, 0)} °C`],
+      [d.hot, "Hitzetag", `heute max. ${fmtT(d.measured_max)} °C${d.options.forecast_entity && s.use_forecast ? `, Vorhersage ${fmtT(d.forecast_max)} °C` : ""} – Grenze ${fmtT(s.outside_limit, 0)} °C`],
       [d.present_today, "Heute jemand da", who],
       [!d.blocked, "Sperre", d.blocked ? `${ent(d.options.block_entity)} ist an` : "frei"],
     ];

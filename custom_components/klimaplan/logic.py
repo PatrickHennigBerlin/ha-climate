@@ -2,7 +2,8 @@
 
 Begriffe
 - Fenster: ein Zeitraum am Tag, in dem gekühlt werden darf ({start, end, temp, fan}).
-- Hitzetag: Außentemperatur über der Grenze (mit Hysterese beim Abschalten).
+- Hitzetag: heute außen schon über der Grenze gemessen oder laut Vorhersage heute über der Grenze.
+  Gilt dann den ganzen Tag (bis zum Tagesbeginn), auch wenn es abends abkühlt.
 - Anwesend heute: heute (seit 00:00) war jemand zu Hause oder mindestens N Bewegungsmelder haben
   ausgelöst – also kein Urlaub.
 """
@@ -23,7 +24,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "plan_needs_home": False, # Zeitpläne nur, solange gerade jemand zu Hause ist
     "protect_enabled": True,  # Hitzeschutz
     "outside_limit": 30.0,    # Hitzetag ab (°C, „über“)
-    "outside_hyst": 2.0,      # Hitzetag endet unter Grenze − Hysterese
+    "use_forecast": True,     # Vorhersage (Tageshöchstwert) mitzählen, falls Wetter-Entität gesetzt
     "start_delta": 2.0,       # Zeitplan: Klima startet erst bei Ist ≥ Plan-Soll + start_delta
     "protect_on": 28.0,       # Hitzeschutz: Klima startet ab dieser Innentemperatur
     "protect_temp": 25.0,     # Soll im Hitzeschutz
@@ -115,12 +116,9 @@ def next_window(plan: dict[str, list[dict[str, Any]]], now: datetime) -> tuple[d
     return None
 
 
-def hot_now(was_hot: bool, outside: Any, limit: float, hyst: float) -> bool:
-    """Hitzetag mit Hysterese. Ohne Außenwert: kein Hitzetag."""
-    v = _num(outside)
-    if v is None:
-        return False
-    return v > (limit - hyst if was_hot else limit)
+def hot_today(measured_max: Any, forecast_max: Any, limit: float) -> bool:
+    """Hitzetag: heutiges gemessenes Maximum oder Vorhersage-Höchstwert über der Grenze."""
+    return any((v := _num(x)) is not None and v > limit for x in (measured_max, forecast_max))
 
 
 def presence_threshold(now: datetime, cutoff: str) -> datetime:
@@ -178,19 +176,18 @@ def climate_setpoint(target: float, attrs: dict[str, Any]) -> float:
 def normalize_settings(cfg: dict[str, Any] | None) -> dict[str, Any]:
     out = {**DEFAULT_SETTINGS, **(cfg or {})}
     try:
-        for k in ("outside_limit", "outside_hyst", "start_delta", "protect_temp", "protect_on"):
+        out.pop("outside_hyst", None)   # bis 0.2.x: Hysterese, ersetzt durch „ganzer Tag“
+        for k in ("outside_limit", "start_delta", "protect_temp", "protect_on"):
             out[k] = round(float(out[k]) * 2) / 2
         out["motion_min"] = int(out["motion_min"])
     except (TypeError, ValueError) as err:
         raise PlanError("Klimaplan: Werte müssen Zahlen sein") from err
-    for k in ("enabled", "plan_enabled", "protect_enabled", "plan_needs_home"):
+    for k in ("enabled", "plan_enabled", "protect_enabled", "plan_needs_home", "use_forecast"):
         out[k] = bool(out[k])
     to_min(out["presence_cutoff"])
     out["presence_cutoff"] = fmt_min(to_min(out["presence_cutoff"]))
     if not 15 <= out["outside_limit"] <= 45:
         raise PlanError("Außengrenze: 15 bis 45 °C")
-    if not 0 <= out["outside_hyst"] <= 10:
-        raise PlanError("Hysterese: 0 bis 10 K")
     if not 0 <= out["start_delta"] <= 10:
         raise PlanError("Einschaltabstand: 0 bis 10 K")
     if not 16 <= out["protect_temp"] <= 30:

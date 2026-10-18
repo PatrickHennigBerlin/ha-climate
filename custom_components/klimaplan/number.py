@@ -16,7 +16,6 @@ from .logic import PlanError
 
 NUMBERS = [
     ("outside_limit", "Außengrenze", "mdi:sun-thermometer", 15, 45, 0.5, UnitOfTemperature.CELSIUS),
-    ("outside_hyst", "Außen-Hysterese", "mdi:arrow-collapse-down", 0, 10, 0.5, UnitOfTemperature.KELVIN),
     ("start_delta", "Einschaltabstand", "mdi:thermometer-chevron-up", 0, 10, 0.5, UnitOfTemperature.KELVIN),
     ("protect_on", "Hitzeschutz ab innen", "mdi:thermometer-alert", 18, 40, 0.5, UnitOfTemperature.CELSIUS),
     ("protect_temp", "Hitzeschutz-Soll", "mdi:thermometer-low", 16, 30, 0.5, UnitOfTemperature.CELSIUS),

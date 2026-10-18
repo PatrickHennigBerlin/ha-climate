@@ -17,6 +17,7 @@ GLOBAL = [
     ("enabled", "Automatik", "mdi:robot-outline"),
     ("plan_enabled", "Zeitpläne", "mdi:calendar-clock"),
     ("protect_enabled", "Hitzeschutz", "mdi:sun-thermometer-outline"),
+    ("use_forecast", "Hitzetag nach Vorhersage", "mdi:weather-sunny-alert"),
     ("plan_needs_home", "Zeitpläne nur wenn jemand zu Hause", "mdi:home-clock-outline"),
 ]
 

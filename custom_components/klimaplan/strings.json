@@ -9,14 +9,16 @@
           "persons": "Persons (presence)",
           "vacation_entity": "Vacation (optional, on = vacation)",
           "block_entity": "Block cooling while on (optional, e.g. heating season)",
-          "motion_entities": "Motion / presence sensors (someone was home today)"
+          "motion_entities": "Motion / presence sensors (someone was home today)",
+          "forecast_entity": "Weather forecast (optional)"
         },
         "data_description": {
-          "outside_entity": "Outdoor temperature sensor; decides the hot day.",
+          "outside_entity": "Outdoor temperature. Once above the limit today, the hot day lasts until midnight.",
           "persons": "If one of these persons was home today, the day counts as occupied (no vacation). Optionally schedules can also require someone home right now.",
           "motion_entities": "Alternative to persons: enough different sensors triggered today also count as occupied.",
           "vacation_entity": "Optional. While on, no automatic cooling.",
-          "block_entity": "Optional. While on (e.g. heating season), no automatic cooling. Manual control always works."
+          "block_entity": "Optional. While on (e.g. heating season), no automatic cooling. Manual control always works.",
+          "forecast_entity": "If today's forecast high is above the limit, the hot day starts in the morning."
         }
       }
     },
@@ -34,14 +36,16 @@
           "persons": "Persons (presence)",
           "vacation_entity": "Vacation (optional, on = vacation)",
           "block_entity": "Block cooling while on (optional, e.g. heating season)",
-          "motion_entities": "Motion / presence sensors (someone was home today)"
+          "motion_entities": "Motion / presence sensors (someone was home today)",
+          "forecast_entity": "Weather forecast (optional)"
         },
         "data_description": {
-          "outside_entity": "Outdoor temperature sensor; decides the hot day.",
+          "outside_entity": "Outdoor temperature. Once above the limit today, the hot day lasts until midnight.",
           "persons": "If one of these persons was home today, the day counts as occupied (no vacation). Optionally schedules can also require someone home right now.",
           "motion_entities": "Alternative to persons: enough different sensors triggered today also count as occupied.",
           "vacation_entity": "Optional. While on, no automatic cooling.",
-          "block_entity": "Optional. While on (e.g. heating season), no automatic cooling. Manual control always works."
+          "block_entity": "Optional. While on (e.g. heating season), no automatic cooling. Manual control always works.",
+          "forecast_entity": "If today's forecast high is above the limit, the hot day starts in the morning."
         },
         "description": "Cooling schedules and heat protection for air conditioners. All values can be changed later under Configure."
       }
@@ -142,10 +146,6 @@
           "name": "outside_limit",
           "description": ""
         },
-        "outside_hyst": {
-          "name": "outside_hyst",
-          "description": ""
-        },
         "start_delta": {
           "name": "start_delta",
           "description": ""
@@ -172,6 +172,10 @@
         },
         "plan_needs_home": {
           "name": "plan_needs_home",
+          "description": ""
+        },
+        "use_forecast": {
+          "name": "use_forecast",
           "description": ""
         }
       }

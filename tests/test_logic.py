@@ -9,7 +9,7 @@ from custom_components.klimaplan.logic import (
     PlanError,
     climate_setpoint,
     default_plan,
-    hot_now,
+    hot_today,
     may_start,
     next_window,
     normalize_settings,
@@ -45,12 +45,13 @@ def test_normalize_windows_errors():
             normalize_windows(bad)
 
 
-def test_hot_hysteresis():
-    assert hot_now(False, "30.5", 30, 2) is True
-    assert hot_now(False, "30", 30, 2) is False        # „über“ 30
-    assert hot_now(True, "28.5", 30, 2) is True        # bleibt heiß bis unter 28
-    assert hot_now(True, "28", 30, 2) is False
-    assert hot_now(True, "unavailable", 30, 2) is False
+def test_hot_today():
+    assert hot_today(30.5, None, 30) is True
+    assert hot_today(30, None, 30) is False            # „über“ 30
+    assert hot_today(None, 31, 30) is True             # Vorhersage reicht
+    assert hot_today(25, 29, 30) is False
+    assert hot_today(None, None, 30) is False
+    assert hot_today("unavailable", None, 30) is False
 
 
 def test_presence_threshold():

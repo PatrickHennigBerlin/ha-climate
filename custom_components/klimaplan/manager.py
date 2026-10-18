@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BLOCK,
+    CONF_FORECAST,
     CONF_MOTION,
     CONF_OUTSIDE,
     CONF_PERSONS,
@@ -31,7 +32,7 @@ from .logic import (
     PlanError,
     climate_setpoint,
     default_plan,
-    hot_now,
+    hot_today,
     may_start,
     next_window,
     normalize_plan,
@@ -63,6 +64,9 @@ class KlimaplanManager:
         self.state: dict[str, dict[str, Any]] = {}   # je Raum {owned, since, temp, fan, paused, manual_temp}
         self.last_home: str | None = None            # ISO-Zeit, zuletzt jemand zu Hause
         self.hot: bool = False
+        self.hot_day: str | None = None              # Tag, für den measured_max/forecast_max gelten
+        self.measured_max: float | None = None       # heute gemessenes Außen-Maximum
+        self.forecast_max: float | None = None       # Vorhersage-Höchstwert für heute
         self.motion_day: str | None = None           # Datum, für das motion_seen gilt
         self.motion_seen: list[str] = []             # Melder, die heute ausgelöst haben
         self._unsubs: list[CALLBACK_TYPE] = []
@@ -83,6 +87,10 @@ class KlimaplanManager:
     @property
     def block_entity(self) -> str | None:
         return self.entry.options.get(CONF_BLOCK) or None
+
+    @property
+    def forecast_entity(self) -> str | None:
+        return self.entry.options.get(CONF_FORECAST) or None
 
     @property
     def motion_entities(self) -> list[str]:
@@ -156,12 +164,16 @@ class KlimaplanManager:
         self.state = {rid: st for rid, st in (data.get("state") or {}).items() if rid in self.rooms}
         self.last_home = data.get("last_home")
         self.hot = bool(data.get("hot"))
+        self.hot_day = data.get("hot_day")
+        self.measured_max = data.get("measured_max")
+        self.forecast_max = data.get("forecast_max")
         self.motion_day = data.get("motion_day")
         self.motion_seen = list(data.get("motion_seen") or [])
 
     def as_dict(self) -> dict[str, Any]:
         return {"rooms": self.rooms, "settings": self.settings, "state": self.state,
-                "last_home": self.last_home, "hot": self.hot,
+                "last_home": self.last_home, "hot": self.hot, "hot_day": self.hot_day,
+                "measured_max": self.measured_max, "forecast_max": self.forecast_max,
                 "motion_day": self.motion_day, "motion_seen": self.motion_seen}
 
     @callback
@@ -174,6 +186,9 @@ class KlimaplanManager:
     # ------------------------------------------------------------------ Start/Stop
     async def async_start(self) -> None:
         self._unsubs.append(async_track_time_change(self.hass, self._tick, second=15))
+        if self.forecast_entity:
+            self._unsubs.append(async_track_time_change(self.hass, self._forecast_tick, minute=[2, 32], second=0))
+            await self.async_update_forecast()
         watch = [e for e in [self.outside_entity, self.vacation_entity, self.block_entity, *self.persons] if e]
         if watch:
             self._unsubs.append(async_track_state_change_event(self.hass, watch, self._changed_event))
@@ -193,6 +208,36 @@ class KlimaplanManager:
 
     async def _tick(self, now: datetime) -> None:
         await self.async_apply()
+
+    async def _forecast_tick(self, now: datetime) -> None:
+        await self.async_update_forecast()
+        await self.async_apply()
+
+    async def async_update_forecast(self) -> None:
+        """Tageshöchstwert für heute aus weather.get_forecasts (daily) holen."""
+        ent = self.forecast_entity
+        if not ent:
+            return
+        try:
+            res = await self.hass.services.async_call("weather", "get_forecasts", {ATTR_ENTITY_ID: ent, "type": "daily"},
+                                                      blocking=True, return_response=True)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Klimaplan: Vorhersage von %s nicht lesbar: %s", ent, err)
+            return
+        today = dt_util.now().date()
+        best = None
+        for f in ((res or {}).get(ent) or {}).get("forecast") or []:
+            when = dt_util.parse_datetime(str(f.get("datetime", "")))
+            if when is not None and dt_util.as_local(when).date() == today and f.get("temperature") is not None:
+                best = float(f["temperature"]) if best is None else max(best, float(f["temperature"]))
+        self._roll_day(dt_util.now())
+        self.forecast_max = best
+        self._save()
+
+    def _roll_day(self, now: datetime) -> None:
+        day = now.date().isoformat()
+        if self.hot_day != day:
+            self.hot_day, self.measured_max, self.forecast_max = day, None, None
 
     async def _changed_event(self, event: Event) -> None:
         await self.async_apply()
@@ -238,9 +283,12 @@ class KlimaplanManager:
             "settings": self.settings,
             "options": {"outside_entity": self.outside_entity, "persons": self.persons,
                         "vacation_entity": self.vacation_entity, "block_entity": self.block_entity,
+                        "forecast_entity": self.forecast_entity,
                         "motion_entities": self.motion_entities},
             "outside": self.outside_value(),
             "hot": self.hot,
+            "measured_max": self.measured_max,
+            "forecast_max": self.forecast_max,
             "present_today": self.present_today(now),
             "motion_today": self.motion_today(now),
             "anyone_home": self.anyone_home(),
@@ -288,7 +336,13 @@ class KlimaplanManager:
         changed = False
         if self.persons and self.anyone_home():
             self.last_home = now.isoformat()
-        hot = hot_now(self.hot, self.outside_value(), self.settings["outside_limit"], self.settings["outside_hyst"])
+        self._roll_day(now)
+        out = self.outside_value()
+        if out is not None and (self.measured_max is None or out > self.measured_max):
+            self.measured_max = out
+            changed = True
+        fc = self.forecast_max if self.settings.get("use_forecast") else None
+        hot = hot_today(self.measured_max, fc, self.settings["outside_limit"])
         if hot != self.hot:
             self.hot = hot
             changed = True

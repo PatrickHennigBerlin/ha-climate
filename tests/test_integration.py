@@ -115,12 +115,14 @@ async def test_protect_starts_only_at_delta(hass, clock):
     env.klima("cool", temperature=25)
     await env.at(61)
     assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "temperature": 23.0}
-    # Hitzetag vorbei (unter 28) -> aus
-    env.set("sensor.aussen", "28.5")
-    await env.at(70)
+    # abends kühlt es ab: Hitzetag gilt bis Mitternacht weiter, Gerät bleibt an
+    env.klima("cool", temperature=23)
+    env.set("sensor.aussen", "24")
+    await env.at(200)
     assert not env.c("set_hvac_mode")
-    env.set("sensor.aussen", "27.9")
-    await env.at(71)
+    assert hass.states.get("binary_sensor.klimaplan_hitzetag").state == "on"
+    # neuer Tag (00:01), außen 24 °C -> kein Hitzetag -> aus
+    await env.at(7 * 60 + 1)
     assert env.c("set_hvac_mode")[-1].data == {"entity_id": WZ, "hvac_mode": "off"}
     assert env.manager.state["klima_wohnzimmer"]["owned"] is False
 
@@ -317,3 +319,22 @@ async def test_plan_runs_while_away_by_default(hass, clock):
     await env.at(65)
     assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 23.0}
     assert hass.states.get("switch.klimaplan_zeitplane_nur_wenn_jemand_zu_hause").state == "off"
+
+
+async def test_hot_day_by_forecast(hass, clock):
+    from homeassistant.core import SupportsResponse
+    async def forecasts(call):
+        day = clock["now"].replace(hour=12).isoformat()
+        return {"weather.home": {"forecast": [{"datetime": day, "temperature": 33.0}]}}
+    hass.services.async_register("weather", "get_forecasts", forecasts, supports_response=SupportsResponse.ONLY)
+    hass.states.async_set("weather.home", "sunny")
+    env = await _setup(hass, clock, outside="24")
+    assert hass.states.get("binary_sensor.klimaplan_hitzetag").state == "off"
+    hass.config_entries.async_update_entry(env.entry, options={**env.entry.options, "forecast_entity": "weather.home"})
+    await hass.async_block_till_done()
+    await env.at(0)
+    assert env.manager.forecast_max == 33.0
+    assert hass.states.get("binary_sensor.klimaplan_hitzetag").state == "on"
+    await hass.services.async_call(DOMAIN, "set_settings", {"use_forecast": False}, blocking=True)
+    await env.at(1)
+    assert hass.states.get("binary_sensor.klimaplan_hitzetag").state == "off"
