@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.2.1";
+const KP_VERSION = "0.2.2";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
@@ -346,7 +346,7 @@ class KlimaplanCard extends HTMLElement {
         </button>`;
     }).join("");
     return `
-<div class="sd plantop">Tag antippen zum Bearbeiten. Im blauen Fenster kühlt der Raum, wenn: Hitzetag, heute schon jemand da,
+<div class="sd plantop">Tag antippen zum Bearbeiten. Im blauen Fenster kühlt der Raum, wenn die Grundbedingungen erfüllt sind (Hitzetag, heute schon jemand da),
         ${this._data.settings.plan_needs_home ? "gerade jemand zu Hause und " : ""}innen mindestens ${fmtT(this._data.settings.start_delta)} K über dem Fenster-Soll.
         Außerhalb der Fenster greift nur der Hitzeschutz (ab ${fmtT(this._data.settings.protect_on)} °C innen).</div>
       <div class="chips">
@@ -427,13 +427,17 @@ class KlimaplanCard extends HTMLElement {
     return `
       <div class="autotab">
         <div class="sec">
-          <div class="sh"><ha-icon icon="mdi:clipboard-check-outline"></ha-icon>Heute</div>
+          <div class="sh"><ha-icon icon="mdi:clipboard-check-outline"></ha-icon>Heute · Grundbedingungen</div>
           ${this._renderConditions()}
         </div>
 
+        <div class="grp">
+          <div class="gh">A · Grundbedingungen <small>gelten für Hitzeschutz <b>und</b> Zeitpläne – erst wenn alle erfüllt sind, darf überhaupt automatisch gekühlt werden</small></div>
+          <div class="gsd">Dazu: Automatik an und Sperre (${esc(this._st(d.options.block_entity)?.attributes?.friendly_name || "keine")}) aus. Den aktuellen Stand siehst du oben unter „Heute“.</div>
         <div class="sec">
           <div class="sh"><ha-icon icon="mdi:white-balance-sunny"></ha-icon>1 · Hitzetag</div>
-          <div class="sd">Nur an Hitzetagen kühlt die Automatik. Der Hitzetag endet erst etwas tiefer, damit nichts ständig an und aus geht.</div>
+          <div class="sd">Ein Hitzetag ist, wenn es <b>außen</b> über der Grenze ist. Ohne Hitzetag kühlt die Automatik gar nicht – weder Hitzeschutz noch Zeitplan.
+            Der Hitzetag endet erst etwas tiefer, damit nichts ständig an und aus geht.</div>
           <div class="sgrid">
             ${num("outside_limit", "Hitzetag, wenn außen über", "°C", 0.5, 15, 45)}
             ${num("outside_hyst", "endet erst unter Grenze minus", "K", 0.5, 0, 10, `= unter ${fmtT(s.outside_limit - s.outside_hyst)} °C`)}
@@ -442,8 +446,8 @@ class KlimaplanCard extends HTMLElement {
 
         <div class="sec">
           <div class="sh"><ha-icon icon="mdi:home-account"></ha-icon>2 · Heute jemand da (kein Urlaub)</div>
-          <div class="sd">Kühlen nur, wenn an diesem Tag schon jemand da war: eine Person war zu Hause
-            ${motion.length ? `oder mindestens ${s.motion_min} verschiedene Bewegungsmelder haben ausgelöst` : ""}. Danach darf der Hitzeschutz auch laufen, wenn ihr tagsüber weg seid.</div>
+          <div class="sd">Ohne Urlaub: an diesem Tag war schon jemand da – eine Person war zu Hause
+            ${motion.length ? `oder mindestens ${s.motion_min} verschiedene Bewegungsmelder haben ausgelöst` : ""}. Danach dürfen Hitzeschutz und Zeitplan auch laufen, wenn ihr tagsüber weg seid.</div>
           <div class="sgrid">
             <label class="sfield">Tag beginnt um
               <input type="time" data-s="presence_cutoff" value="${esc(s.presence_cutoff)}">
@@ -453,9 +457,13 @@ class KlimaplanCard extends HTMLElement {
           </div>
         </div>
 
+        </div>
+
+        <div class="grp">
+          <div class="gh">B · Regeln <small>gelten zusätzlich zu den Grundbedingungen, je Raum – trifft beides zu, zählt der niedrigere Soll</small></div>
         <div class="sec">
           <div class="sh"><ha-icon icon="mdi:shield-sun-outline"></ha-icon>3 · Hitzeschutz ${sw("protect_enabled", "an")}</div>
-          <div class="sd">Hält die Wohnung erträglich, auch wenn gerade niemand da ist. Gilt für Räume mit Haken „Hitzeschutz“ (unten).</div>
+          <div class="sd">Ganztägig: Wird es <b>innen</b> zu warm, kühlt der Raum herunter – auch wenn gerade niemand da ist. Gilt für Räume mit Haken „Hitzeschutz“ (unten).</div>
           <div class="sgrid">
             ${num("protect_on", "Einschalten ab innen", "°C", 0.5, 18, 40)}
             ${num("protect_temp", "dann kühlen auf", "°C", 0.5, 16, 30)}
@@ -467,12 +475,14 @@ class KlimaplanCard extends HTMLElement {
 
         <div class="sec">
           <div class="sh"><ha-icon icon="mdi:calendar-clock"></ha-icon>4 · Zeitpläne ${sw("plan_enabled", "an")}</div>
-          <div class="sd">Kühlfenster je Raum (Tab „Zeitplan“). Gilt an Hitzetagen, an denen heute schon jemand da war.</div>
+          <div class="sd">Nur in den Kühlfenstern je Raum (Tab „Zeitplan“), früher und kühler als der Hitzeschutz.</div>
           <div class="sgrid">
             ${num("start_delta", "Einschalten ab Plan-Soll plus", "K", 0.5, 0, 10, `z. B. Plan 23 °C → an ab ${fmtT(23 + Number(s.start_delta))} °C`)}
           </div>
           <label class="toggle"><input type="checkbox" data-s="plan_needs_home" ${s.plan_needs_home ? "checked" : ""}>
             <span>Nur wenn gerade jemand zu Hause ist <small class="muted">${s.plan_needs_home ? "– sind alle weg, endet der Zeitplan" : "– aus: Zeitplan läuft auch, wenn alle unterwegs sind (z. B. vorkühlen)"}</small></span></label>
+        </div>
+
         </div>
 
         ${dirty ? `<div class="savebar"><span>Änderungen noch nicht gespeichert</span><span><button class="txt" data-s-cancel>Verwerfen</button><button class="txt primary" data-s-save>Speichern</button></span></div>` : ""}
@@ -515,12 +525,12 @@ class KlimaplanCard extends HTMLElement {
     if (compact) {
       return `<div class="conds compact">
         ${items.map(([on, l, t]) => `<span class="cond ${on ? "yes" : "no"}" title="${esc(t)}"><ha-icon icon="${on ? "mdi:check-circle" : "mdi:close-circle"}"></ha-icon><b>${l}</b>${on ? "" : `<span>${t}</span>`}</span>`).join("")}
-        <div class="cres">${ok ? "Automatik bereit – Räume kühlen, sobald ihre Schwelle erreicht ist." : "Automatik kühlt gerade nicht – Grund rot markiert, Details im Tab „Automatik“."}</div>
+        <div class="cres">${ok ? "Grundbedingungen erfüllt – Räume kühlen, sobald Hitzeschutz oder Zeitplan ihre Schwelle erreichen." : "Grundbedingung nicht erfüllt (rot) – heute kühlt nichts automatisch. Details im Tab „Automatik“."}</div>
       </div>`;
     }
     return `<div class="conds ${ok ? "ok" : ""}">
       ${items.map(([on, l, t]) => `<div class="cond ${on ? "yes" : "no"}"><ha-icon icon="${on ? "mdi:check-circle" : "mdi:close-circle"}"></ha-icon><div><b>${l}</b><span>${t}</span></div></div>`).join("")}
-      <div class="cres">${ok ? "Automatik bereit – Räume kühlen, sobald ihre Schwelle erreicht ist." : "Automatik kühlt gerade nicht (rot markiert ist der Grund)."}</div>
+      <div class="cres">${ok ? "Alle Grundbedingungen erfüllt – Hitzeschutz und Zeitpläne dürfen kühlen." : "Eine Grundbedingung fehlt (rot) – weder Hitzeschutz noch Zeitplan kühlen automatisch."}</div>
     </div>`;
   }
 
@@ -730,6 +740,11 @@ const STYLE = `
   .field label { color: var(--secondary-text-color); font-size:.9em; }
   .dact { display:flex; justify-content:space-between; align-items:center; margin-top:12px; }
   .plantop { margin-bottom:10px; }
+  .grp { display:flex; flex-direction:column; gap:10px; padding:10px; border-radius:14px; background: rgba(127,127,127,.06); }
+  .gh { font-weight:700; font-size:1.02em; display:flex; flex-direction:column; gap:2px; }
+  .gh small { font-weight:400; font-size:.8em; color: var(--secondary-text-color); }
+  .gsd { font-size:.82em; color: var(--secondary-text-color); margin-top:-4px; }
+  .grp .sec { background: var(--card-background-color); }
   .autotab { display:flex; flex-direction:column; gap:14px; }
   .sec { border:1px solid var(--divider-color); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
   .sh { display:flex; align-items:center; gap:8px; font-weight:600; }
