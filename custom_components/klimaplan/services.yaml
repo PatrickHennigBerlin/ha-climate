@@ -73,6 +73,9 @@ set_settings:
     protect_enabled:
       selector:
         boolean:
+    plan_needs_home:
+      selector:
+        boolean:
     outside_limit:
       selector:
         number: {min: 15, max: 45, step: 0.5, unit_of_measurement: "°C"}

@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.2.0";
+const KP_VERSION = "0.2.1";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
@@ -347,7 +347,7 @@ class KlimaplanCard extends HTMLElement {
     }).join("");
     return `
 <div class="sd plantop">Tag antippen zum Bearbeiten. Im blauen Fenster kühlt der Raum, wenn: Hitzetag, heute schon jemand da,
-        gerade jemand zu Hause und innen mindestens ${fmtT(this._data.settings.start_delta)} K über dem Fenster-Soll.
+        ${this._data.settings.plan_needs_home ? "gerade jemand zu Hause und " : ""}innen mindestens ${fmtT(this._data.settings.start_delta)} K über dem Fenster-Soll.
         Außerhalb der Fenster greift nur der Hitzeschutz (ab ${fmtT(this._data.settings.protect_on)} °C innen).</div>
       <div class="chips">
         ${this._rooms().map((r) => `<button class="chip ${r.id === room.id ? "on" : ""}" data-room-chip="${r.id}">
@@ -467,10 +467,12 @@ class KlimaplanCard extends HTMLElement {
 
         <div class="sec">
           <div class="sh"><ha-icon icon="mdi:calendar-clock"></ha-icon>4 · Zeitpläne ${sw("plan_enabled", "an")}</div>
-          <div class="sd">Kühlfenster je Raum (Tab „Zeitplan“), nur solange jemand zu Hause ist. Sind beide weg, endet der Zeitplan.</div>
+          <div class="sd">Kühlfenster je Raum (Tab „Zeitplan“). Gilt an Hitzetagen, an denen heute schon jemand da war.</div>
           <div class="sgrid">
             ${num("start_delta", "Einschalten ab Plan-Soll plus", "K", 0.5, 0, 10, `z. B. Plan 23 °C → an ab ${fmtT(23 + Number(s.start_delta))} °C`)}
           </div>
+          <label class="toggle"><input type="checkbox" data-s="plan_needs_home" ${s.plan_needs_home ? "checked" : ""}>
+            <span>Nur wenn gerade jemand zu Hause ist <small class="muted">${s.plan_needs_home ? "– sind alle weg, endet der Zeitplan" : "– aus: Zeitplan läuft auch, wenn alle unterwegs sind (z. B. vorkühlen)"}</small></span></label>
         </div>
 
         ${dirty ? `<div class="savebar"><span>Änderungen noch nicht gespeichert</span><span><button class="txt" data-s-cancel>Verwerfen</button><button class="txt primary" data-s-save>Speichern</button></span></div>` : ""}

@@ -76,8 +76,10 @@ def test_room_target():
     assert _target(now=MON_19.replace(hour=12))["start_at"] == 28   # Hitzeschutz ab 28 innen
     # außerhalb des Fensters: Hitzeschutz 25
     assert _target(now=MON_19.replace(hour=12))["source"] == "protect"
-    # beide weg: kein Plan, nur Hitzeschutz
-    assert _target(anyone_home=False)["temp"] == 25
+    # beide weg: Plan läuft weiter (Standard) …
+    assert _target(anyone_home=False)["temp"] == 23
+    # … außer „nur wenn jemand zu Hause“ ist an
+    assert _target(anyone_home=False, settings={**DEFAULT_SETTINGS, "plan_needs_home": True})["temp"] == 25
     # Raum ohne Plan
     assert _target(room=_room(plan_enabled=False))["source"] == "protect"
     # ohne Hitzeschutz und außerhalb des Plans: nichts

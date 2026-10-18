@@ -11,7 +11,7 @@ Home-Assistant-Integration für Klimageräte im Sommer: **Bedienen** (Modus, Lü
 | **Heute da** | Heute (ab 00:00) war eine Person zu Hause **oder** mindestens 2 verschiedene Bewegungsmelder haben ausgelöst → kein Urlaub. Optional zusätzlich ein Urlaubs-Schalter. Hitzeschutz und Zeitplan laufen nur an solchen Tagen. |
 | **Sperre** | Solange die Sperr-Entität an ist (z. B. `switch.heizperiode`), kühlt Klimaplan nicht automatisch. |
 | **Hitzeschutz** | Hitzetag + heute da + innen ≥ 28 °C → kühlen auf 25 °C, Lüfter Auto (Räume mit Hitzeschutz-Haken). Läuft auch tagsüber, wenn gerade niemand zu Hause ist. |
-| **Zeitplan** | Hitzetag + heute da + *gerade jemand zu Hause* → Soll laut Kühlfenster (Standard 23 °C, Auto, Mo–Fr 18–21, Sa–So 10–21). |
+| **Zeitplan** | Hitzetag + heute da (+ optional *gerade jemand zu Hause*, Schalter „Zeitpläne nur wenn jemand zu Hause“, Standard aus) → Soll laut Kühlfenster (Standard 23 °C, Auto, Mo–Fr 18–21, Sa–So 10–21). |
 | **Start** | Ein Gerät wird nur eingeschaltet, wenn es **aus** ist und die Schwelle erreicht: Zeitplan **Ist ≥ Plan-Soll + 2 K**, Hitzeschutz **Ist ≥ 28 °C**. Dann: Kühlen, Soll aus Plan oder Hitzeschutz – der niedrigere gewinnt. |
 | **Ende** | Gilt kein Soll mehr (Fenster vorbei, alle weg ohne Hitzeschutz, Hitzetag vorbei), schaltet Klimaplan **nur Geräte aus, die es selbst eingeschaltet hat**. |
 | **Hand** | Ausschalten oder Moduswechsel von Hand (auch durch Skripte) pausiert den Raum bis zum nächsten Quellenwechsel (neues Fenster, Hitzeschutz ↔ Plan). Soll von Hand geändert → bleibt bis zum nächsten Wechsel. |

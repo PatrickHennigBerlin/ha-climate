@@ -13,7 +13,7 @@
         },
         "data_description": {
           "outside_entity": "Sensor für die Außentemperatur. Entscheidet über den Hitzetag.",
-          "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Für Zeitpläne muss gerade jemand zu Hause sein.",
+          "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Optional können Zeitpläne zusätzlich verlangen, dass gerade jemand zu Hause ist.",
           "motion_entities": "Alternativ zu den Personen: Haben heute genug verschiedene Melder ausgelöst (Anzahl in der Karte), gilt der Tag ebenfalls als „jemand da“.",
           "vacation_entity": "Optional. Ist diese Entität an, kühlt die Automatik nicht.",
           "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer."
@@ -38,7 +38,7 @@
         },
         "data_description": {
           "outside_entity": "Sensor für die Außentemperatur. Entscheidet über den Hitzetag.",
-          "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Für Zeitpläne muss gerade jemand zu Hause sein.",
+          "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Optional können Zeitpläne zusätzlich verlangen, dass gerade jemand zu Hause ist.",
           "motion_entities": "Alternativ zu den Personen: Haben heute genug verschiedene Melder ausgelöst (Anzahl in der Karte), gilt der Tag ebenfalls als „jemand da“.",
           "vacation_entity": "Optional. Ist diese Entität an, kühlt die Automatik nicht.",
           "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer."
@@ -168,6 +168,10 @@
         },
         "motion_min": {
           "name": "motion_min",
+          "description": ""
+        },
+        "plan_needs_home": {
+          "name": "plan_needs_home",
           "description": ""
         }
       }

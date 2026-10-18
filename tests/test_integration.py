@@ -134,6 +134,7 @@ async def test_not_hot_no_start(hass, clock):
 
 async def test_both_away_plan_falls_back_and_vacation(hass, clock):
     env = await _setup(hass, clock)
+    await hass.services.async_call(DOMAIN, "set_settings", {"plan_needs_home": True}, blocking=True)
     env.klima(current_temperature=25)        # Plan 23 -> ab 25
     await env.at(65)
     assert env.c("set_temperature")[-1].data["temperature"] == 23.0
@@ -147,6 +148,7 @@ async def test_both_away_plan_falls_back_and_vacation(hass, clock):
 
 async def test_both_away_without_protect_switches_off(hass, clock):
     env = await _setup(hass, clock)
+    await hass.services.async_call(DOMAIN, "set_settings", {"plan_needs_home": True}, blocking=True)
     await hass.services.async_call(DOMAIN, "update_room", {"room": "Wohnzimmer", "protect": False}, blocking=True)
     env.klima(current_temperature=25)
     await env.at(65)
@@ -305,3 +307,13 @@ async def test_presence_since_midnight(hass, clock):
     env.set("person.patrick", "not_home")
     env.manager.last_home = (clock["t0"] - timedelta(hours=15)).isoformat()   # heute 02:00 noch zu Hause
     assert env.manager.present_today(clock["t0"]) is True
+
+
+async def test_plan_runs_while_away_by_default(hass, clock):
+    env = await _setup(hass, clock)
+    await hass.services.async_call(DOMAIN, "update_room", {"room": "Wohnzimmer", "protect": False}, blocking=True)
+    env.set("person.patrick", "not_home")    # war heute da (last_home), jetzt weg
+    env.klima(current_temperature=25)
+    await env.at(65)
+    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 23.0}
+    assert hass.states.get("switch.klimaplan_zeitplane_nur_wenn_jemand_zu_hause").state == "off"

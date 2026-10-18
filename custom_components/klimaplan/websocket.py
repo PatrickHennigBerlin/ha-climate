@@ -73,6 +73,7 @@ async def ws_set_day(hass, manager, msg):
     vol.Optional("enabled"): bool,
     vol.Optional("plan_enabled"): bool,
     vol.Optional("protect_enabled"): bool,
+        vol.Optional("plan_needs_home"): bool,
     vol.Optional("outside_limit"): vol.Coerce(float),
     vol.Optional("outside_hyst"): vol.Coerce(float),
     vol.Optional("start_delta"): vol.Coerce(float),

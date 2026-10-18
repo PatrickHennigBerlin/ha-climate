@@ -20,6 +20,7 @@ WEEKEND = DAYS[5:]
 DEFAULT_SETTINGS: dict[str, Any] = {
     "enabled": True,          # Automatik insgesamt
     "plan_enabled": True,     # Zeitpläne
+    "plan_needs_home": False, # Zeitpläne nur, solange gerade jemand zu Hause ist
     "protect_enabled": True,  # Hitzeschutz
     "outside_limit": 30.0,    # Hitzetag ab (°C, „über“)
     "outside_hyst": 2.0,      # Hitzetag endet unter Grenze − Hysterese
@@ -138,7 +139,7 @@ def room_target(*, room: dict[str, Any], settings: dict[str, Any], now: datetime
     if blocked or not settings["enabled"] or not hot or not present_today:
         return None
     candidates = []
-    if settings["plan_enabled"] and room.get("plan_enabled") and anyone_home:
+    if settings["plan_enabled"] and room.get("plan_enabled") and (anyone_home or not settings.get("plan_needs_home")):
         w = window_at(room.get("plan") or {}, now)
         if w is not None:
             candidates.append({"temp": w["temp"], "fan": w.get("fan"), "source": "plan",
@@ -182,7 +183,7 @@ def normalize_settings(cfg: dict[str, Any] | None) -> dict[str, Any]:
         out["motion_min"] = int(out["motion_min"])
     except (TypeError, ValueError) as err:
         raise PlanError("Klimaplan: Werte müssen Zahlen sein") from err
-    for k in ("enabled", "plan_enabled", "protect_enabled"):
+    for k in ("enabled", "plan_enabled", "protect_enabled", "plan_needs_home"):
         out[k] = bool(out[k])
     to_min(out["presence_cutoff"])
     out["presence_cutoff"] = fmt_min(to_min(out["presence_cutoff"]))
