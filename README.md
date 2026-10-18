@@ -8,11 +8,11 @@ Home-Assistant-Integration für Klimageräte im Sommer: **Bedienen** (Modus, Lü
 | | |
 |---|---|
 | **Hitzetag** | Außentemperatur über *Außengrenze* (Standard 30 °C). Endet erst unter Grenze − Hysterese (Standard 28 °C). |
-| **Heute da** | Seit der Stichzeit (Standard 05:00) war jemand zu Hause → kein Urlaub. Optional zusätzlich ein Urlaubs-Schalter. |
+| **Heute da** | Heute (ab 00:00) war eine Person zu Hause **oder** mindestens 2 verschiedene Bewegungsmelder haben ausgelöst → kein Urlaub. Optional zusätzlich ein Urlaubs-Schalter. Hitzeschutz und Zeitplan laufen nur an solchen Tagen. |
 | **Sperre** | Solange die Sperr-Entität an ist (z. B. `switch.heizperiode`), kühlt Klimaplan nicht automatisch. |
-| **Hitzeschutz** | Hitzetag + heute da → Soll 25 °C, Lüfter Auto (Räume mit Hitzeschutz-Haken). Läuft auch weiter, wenn gerade niemand zu Hause ist. |
+| **Hitzeschutz** | Hitzetag + heute da + innen ≥ 28 °C → kühlen auf 25 °C, Lüfter Auto (Räume mit Hitzeschutz-Haken). Läuft auch tagsüber, wenn gerade niemand zu Hause ist. |
 | **Zeitplan** | Hitzetag + heute da + *gerade jemand zu Hause* → Soll laut Kühlfenster (Standard 23 °C, Auto, Mo–Fr 18–21, Sa–So 10–21). |
-| **Start** | Ein Gerät wird nur eingeschaltet, wenn es **aus** ist und **Ist ≥ Soll + 2 K** (Einschaltabstand). Dann: Kühlen, Soll aus Plan oder Hitzeschutz – der niedrigere gewinnt. |
+| **Start** | Ein Gerät wird nur eingeschaltet, wenn es **aus** ist und die Schwelle erreicht: Zeitplan **Ist ≥ Plan-Soll + 2 K**, Hitzeschutz **Ist ≥ 28 °C**. Dann: Kühlen, Soll aus Plan oder Hitzeschutz – der niedrigere gewinnt. |
 | **Ende** | Gilt kein Soll mehr (Fenster vorbei, alle weg ohne Hitzeschutz, Hitzetag vorbei), schaltet Klimaplan **nur Geräte aus, die es selbst eingeschaltet hat**. |
 | **Hand** | Ausschalten oder Moduswechsel von Hand (auch durch Skripte) pausiert den Raum bis zum nächsten Quellenwechsel (neues Fenster, Hitzeschutz ↔ Plan). Soll von Hand geändert → bleibt bis zum nächsten Wechsel. |
 
@@ -51,7 +51,7 @@ view: rooms           # rooms | plan | auto
 
 - `switch.klimaplan_automatik`, `switch.klimaplan_zeitplane`, `switch.klimaplan_hitzeschutz`
 - je Raum `switch.klimaplan_plan_<raum>`, `switch.klimaplan_hitzeschutz_<raum>`
-- `number.klimaplan_aussengrenze`, `…_aussen_hysterese`, `…_einschaltabstand`, `…_hitzeschutz_soll`
+- `number.klimaplan_aussengrenze`, `…_aussen_hysterese`, `…_einschaltabstand`, `…_hitzeschutz_ab_innen`, `…_hitzeschutz_soll`, `…_bewegungsmelder_heute`
 - `binary_sensor.klimaplan_hitzetag`, `binary_sensor.klimaplan_anwesend_heute`, je Raum `binary_sensor.klimaplan_<raum>_kuhlt`
 - je Raum `sensor.klimaplan_<raum>_kuhl_soll` (Attribut `quelle`: Zeitplan / Hitzeschutz / aus)
 

@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.1.1";
+const KP_VERSION = "0.2.0";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
@@ -223,10 +223,6 @@ class KlimaplanCard extends HTMLElement {
         <span class="out ${d.hot ? "hot" : ""}" title="Außentemperatur">
           <ha-icon icon="${d.hot ? "mdi:weather-sunny-alert" : "mdi:thermometer"}"></ha-icon>${fmtT(d.outside)} °C
         </span>
-        ${chip(d.hot, "mdi:white-balance-sunny", d.hot ? "Hitzetag" : "kein Hitzetag", `Hitzetag ab über ${lim} °C, endet unter ${off} °C`, "sun")}
-        ${chip(d.present_today, d.anyone_home ? "mdi:home-account" : "mdi:home-export-outline",
-          d.anyone_home ? "zu Hause" : d.present_today ? "unterwegs · heute da gewesen" : "heute niemand da",
-          d.present_today ? `Heute nach ${s.presence_cutoff} Uhr war schon jemand zu Hause – kein Urlaub, Hitzeschutz darf laufen` : `Heute nach ${s.presence_cutoff} Uhr noch niemand zu Hause – Urlaub angenommen, Automatik ruht`)}
         <button class="pill btn ${s.enabled ? "on" : ""}" data-set="enabled" title="Automatik insgesamt">
           <ha-icon icon="${s.enabled ? "mdi:robot" : "mdi:robot-off-outline"}"></ha-icon>Automatik ${s.enabled ? "an" : "aus"}
         </button>
@@ -244,9 +240,11 @@ class KlimaplanCard extends HTMLElement {
 
   // ---- Räume
   _renderRooms() {
-    return `<div class="grid">${this._rooms().map((r) => this._renderTile(r)).join("")}</div>
-      <div class="hint foot">Automatik startet ein Gerät nur, wenn es aus ist und Ist ≥ Soll + ${fmtT(this._data.settings.start_delta)} K.
-        Wer von Hand ausschaltet oder den Modus ändert, pausiert die Automatik bis zum nächsten Wechsel.</div>`;
+    return `${this._renderConditions(true)}
+      <div class="grid">${this._rooms().map((r) => this._renderTile(r)).join("")}</div>
+      <div class="hint foot">Bedienen geht immer von Hand. Die Automatik schaltet nur Geräte ein, die aus sind, und nur ihre eigenen wieder aus.
+        Schaltest du ein automatisch gestartetes Gerät aus oder änderst den Modus, pausiert sie in dem Raum bis zum nächsten Zeitfenster.
+        Raumname antippen öffnet den Zeitplan.</div>`;
   }
 
   _status(room) {
@@ -259,7 +257,7 @@ class KlimaplanCard extends HTMLElement {
     if (s.active) return ["auto", "mdi:robot", `Automatik · ${src}`];
     if (hvac && hvac !== "off") return ["manual", "mdi:hand-back-right", "Manuell"];
     if (s.paused) return ["pause", "mdi:pause-circle-outline", "Pausiert bis Wechsel"];
-    if (t && s.waiting) return ["wait", "mdi:timer-sand", `bereit · ab ${fmtT(t.temp + this._data.settings.start_delta)} °C`];
+    if (t && s.waiting) return ["wait", "mdi:timer-sand", `wartet · an ab ${fmtT(t.start_at)} °C`];
     return ["off", "mdi:power", "Aus"];
   }
 
@@ -267,16 +265,16 @@ class KlimaplanCard extends HTMLElement {
     const s = room.status;
     const set = this._data.settings;
     const d = set.start_delta;
-    if (!room.plan_enabled || !set.plan_enabled) return "Kein Zeitplan";
-    if (s.window) return `Zeitplan jetzt bis ${s.window.end} · ${fmtT(s.window.temp)} °C (an ab ${fmtT(s.window.temp + d)} °C)`;
-    if (s.next_window) return `Zeitplan ${dayText(s.next_window.at)}–${s.next_window.end} · ${fmtT(s.next_window.temp)} °C (an ab ${fmtT(s.next_window.temp + d)} °C)`;
-    return "Zeitplan leer";
+    if (!room.plan_enabled || !set.plan_enabled) return "Zeitplan: aus";
+    if (s.window) return `Zeitplan jetzt bis ${s.window.end}: ab ${fmtT(s.window.temp + d)} °C innen → ${fmtT(s.window.temp)} °C`;
+    if (s.next_window) return `Zeitplan ${dayText(s.next_window.at)}–${s.next_window.end}: ab ${fmtT(s.next_window.temp + d)} °C innen → ${fmtT(s.next_window.temp)} °C`;
+    return "Zeitplan: keine Fenster";
   }
 
   _protectLine(room) {
     const set = this._data.settings;
-    if (!room.protect || !set.protect_enabled) return "Kein Hitzeschutz";
-    return `Hitzeschutz ${fmtT(set.protect_temp)} °C (an ab ${fmtT(set.protect_temp + set.start_delta)} °C)`;
+    if (!room.protect || !set.protect_enabled) return "Hitzeschutz: aus";
+    return `Hitzeschutz: ab ${fmtT(set.protect_on)} °C innen → ${fmtT(set.protect_temp)} °C`;
   }
 
   _renderTile(room) {
@@ -348,6 +346,9 @@ class KlimaplanCard extends HTMLElement {
         </button>`;
     }).join("");
     return `
+<div class="sd plantop">Tag antippen zum Bearbeiten. Im blauen Fenster kühlt der Raum, wenn: Hitzetag, heute schon jemand da,
+        gerade jemand zu Hause und innen mindestens ${fmtT(this._data.settings.start_delta)} K über dem Fenster-Soll.
+        Außerhalb der Fenster greift nur der Hitzeschutz (ab ${fmtT(this._data.settings.protect_on)} °C innen).</div>
       <div class="chips">
         ${this._rooms().map((r) => `<button class="chip ${r.id === room.id ? "on" : ""}" data-room-chip="${r.id}">
           ${r.plan_enabled ? `<ha-icon icon="mdi:calendar-check"></ha-icon>` : ""}${esc(r.name)}</button>`).join("")}
@@ -362,8 +363,8 @@ class KlimaplanCard extends HTMLElement {
         <div class="scale"><span></span><span class="ticks">${[0, 6, 12, 18, 24].map((h) => `<span style="left:${h / 0.24}%">${h}</span>`).join("")}</span><span class="wtext"></span></div>
         ${rows}
       </div>
-      <div class="hint">Zeitplan gilt nur an Hitzetagen, wenn heute jemand zu Hause war und gerade jemand da ist.
-        Tag antippen zum Bearbeiten. Liegt der Hitzeschutz-Soll niedriger, gilt dieser.</div>`;
+      ${room.plan_enabled ? "" : `<div class="sd">Zeitplan für ${esc(room.name)} ist aus – hier greift nur der Hitzeschutz. Haken oben setzen, um die Fenster zu nutzen.</div>`}
+`;
   }
 
   _renderEditor() {
@@ -410,54 +411,115 @@ class KlimaplanCard extends HTMLElement {
     const s = this._settings || this._data.settings;
     const d = this._data;
     const dirty = !!this._settings;
-    const field = (k, label, unit, step, min, max) => `
+    const num = (k, label, unit, step, min, max, help) => `
       <label class="sfield">${label}
         <span class="inp"><input type="number" data-s="${k}" value="${s[k]}" step="${step}" min="${min}" max="${max}"><em>${unit}</em></span>
+        ${help ? `<small>${help}</small>` : ""}
       </label>`;
-    const tog = (k, label, sub) => `
-      <label class="toggle big"><input type="checkbox" data-s="${k}" ${s[k] ? "checked" : ""}><span>${label}<small>${sub}</small></span></label>`;
+    const sw = (k, label) => `<label class="toggle"><input type="checkbox" data-s="${k}" ${s[k] ? "checked" : ""}><b>${label}</b></label>`;
+    const ent = (e) => (e ? esc(this._st(e)?.attributes?.friendly_name || e) : "–");
+    const motion = d.options.motion_entities || [];
     const rooms = this._rooms().map((r) => `
       <tr><td>${esc(r.name)}</td>
-        <td><input type="checkbox" data-room-flag="plan_enabled" data-room="${r.id}" ${r.plan_enabled ? "checked" : ""}></td>
-        <td><input type="checkbox" data-room-flag="protect" data-room="${r.id}" ${r.protect ? "checked" : ""}></td>
-        <td class="muted">${r.status.target ? `${fmtT(r.status.target.temp)} °C · ${r.status.target.source === "plan" ? "Plan" : "Hitzeschutz"}` : "–"}</td></tr>`).join("");
-    const ent = (e) => (e ? esc(this._st(e)?.attributes?.friendly_name || e) : "–");
+        <td><input type="checkbox" data-room-flag="plan_enabled" data-room="${r.id}" ${r.plan_enabled ? "checked" : ""} aria-label="Zeitplan ${esc(r.name)}"></td>
+        <td><input type="checkbox" data-room-flag="protect" data-room="${r.id}" ${r.protect ? "checked" : ""} aria-label="Hitzeschutz ${esc(r.name)}"></td>
+        <td class="muted">${r.status.target ? `${fmtT(r.status.target.temp)} °C · ${r.status.target.source === "plan" ? "Zeitplan" : "Hitzeschutz"}` : "–"}</td></tr>`).join("");
     return `
       <div class="autotab">
-        <div class="rule">
-          <ha-icon icon="mdi:information-outline"></ha-icon>
-          <div><b>Kein Urlaub</b> = heute nach ${esc(s.presence_cutoff)} Uhr war schon mal jemand zu Hause. Danach darf gekühlt werden, auch wenn ihr tagsüber arbeitet.<br>
-            <b>Hitzeschutz</b> (auch wenn niemand da ist): außen über ${fmtT(s.outside_limit, 1)} °C und Ist mindestens ${fmtT(s.start_delta)} K über ${fmtT(s.protect_temp)} °C
-            → Kühlen auf ${fmtT(s.protect_temp)} °C.<br>
-            <b>Zeitplan</b> (nur wenn jemand zu Hause ist): im Zeitfenster, außen über ${fmtT(s.outside_limit, 1)} °C und Ist mindestens ${fmtT(s.start_delta)} K über dem Plan-Soll
-            → Kühlen auf den Plan-Soll. Sind beide weg, endet der Zeitplan.<br>
-            Hitzetag endet unter ${fmtT(s.outside_limit - s.outside_hyst, 1)} °C. Gelten beide, zählt der niedrigere Soll. Klimaplan schaltet nur Geräte ein, die aus sind, und nur selbst eingeschaltete wieder aus.</div>
+        <div class="sec">
+          <div class="sh"><ha-icon icon="mdi:clipboard-check-outline"></ha-icon>Heute</div>
+          ${this._renderConditions()}
         </div>
-        <div class="tgrid">
-          ${tog("protect_enabled", "Hitzeschutz", "alle Räume mit Hitzeschutz-Haken")}
-          ${tog("plan_enabled", "Zeitpläne", "nur Räume mit Zeitplan, nur wenn jemand da ist")}
+
+        <div class="sec">
+          <div class="sh"><ha-icon icon="mdi:white-balance-sunny"></ha-icon>1 · Hitzetag</div>
+          <div class="sd">Nur an Hitzetagen kühlt die Automatik. Der Hitzetag endet erst etwas tiefer, damit nichts ständig an und aus geht.</div>
+          <div class="sgrid">
+            ${num("outside_limit", "Hitzetag, wenn außen über", "°C", 0.5, 15, 45)}
+            ${num("outside_hyst", "endet erst unter Grenze minus", "K", 0.5, 0, 10, `= unter ${fmtT(s.outside_limit - s.outside_hyst)} °C`)}
+          </div>
         </div>
-        <div class="sgrid">
-          ${field("outside_limit", "Hitzetag ab (außen über)", "°C", 0.5, 15, 45)}
-          ${field("outside_hyst", "Hysterese", "K", 0.5, 0, 10)}
-          ${field("start_delta", "Einschalten ab Soll +", "K", 0.5, 0, 10)}
-          ${field("protect_temp", "Hitzeschutz-Soll", "°C", 0.5, 16, 30)}
-          <label class="sfield">Lüfter im Hitzeschutz
-            <select data-s="protect_fan">${["auto", "1", "2", "3", "4"].map((f) => `<option value="${f}" ${(s.protect_fan || "auto") === f ? "selected" : ""}>${FAN_LABEL(f)}</option>`).join("")}</select>
-          </label>
-          <label class="sfield">„Heute da“ ab
-            <input type="time" data-s="presence_cutoff" value="${esc(s.presence_cutoff)}">
-          </label>
+
+        <div class="sec">
+          <div class="sh"><ha-icon icon="mdi:home-account"></ha-icon>2 · Heute jemand da (kein Urlaub)</div>
+          <div class="sd">Kühlen nur, wenn an diesem Tag schon jemand da war: eine Person war zu Hause
+            ${motion.length ? `oder mindestens ${s.motion_min} verschiedene Bewegungsmelder haben ausgelöst` : ""}. Danach darf der Hitzeschutz auch laufen, wenn ihr tagsüber weg seid.</div>
+          <div class="sgrid">
+            <label class="sfield">Tag beginnt um
+              <input type="time" data-s="presence_cutoff" value="${esc(s.presence_cutoff)}">
+              <small>00:00 = ganzer Kalendertag</small>
+            </label>
+            ${motion.length ? num("motion_min", "oder Melder ausgelöst, mindestens", "Stück", 1, 0, 10, "0 = Melder nicht benutzen") : ""}
+          </div>
         </div>
-        ${dirty ? `<div class="dact"><button class="txt" data-s-cancel>Verwerfen</button><button class="txt primary" data-s-save>Speichern</button></div>` : ""}
-        <table class="rtable">
-          <thead><tr><th>Raum</th><th>Zeitplan</th><th>Hitzeschutz</th><th>Ziel jetzt</th></tr></thead>
-          <tbody>${rooms}</tbody>
-        </table>
-        <div class="hint">Außen: ${ent(d.options.outside_entity)} · Personen: ${(d.options.persons || []).map(ent).join(", ") || "–"}
-          · Sperre: ${ent(d.options.block_entity)}${d.options.vacation_entity ? ` · Urlaub: ${ent(d.options.vacation_entity)}` : ""}
-          <br>Ändern unter Einstellungen → Geräte &amp; Dienste → Klimaplan → Konfigurieren.</div>
+
+        <div class="sec">
+          <div class="sh"><ha-icon icon="mdi:shield-sun-outline"></ha-icon>3 · Hitzeschutz ${sw("protect_enabled", "an")}</div>
+          <div class="sd">Hält die Wohnung erträglich, auch wenn gerade niemand da ist. Gilt für Räume mit Haken „Hitzeschutz“ (unten).</div>
+          <div class="sgrid">
+            ${num("protect_on", "Einschalten ab innen", "°C", 0.5, 18, 40)}
+            ${num("protect_temp", "dann kühlen auf", "°C", 0.5, 16, 30)}
+            <label class="sfield">Lüfter
+              <select data-s="protect_fan">${["auto", "1", "2", "3", "4"].map((f) => `<option value="${f}" ${(s.protect_fan || "auto") === f ? "selected" : ""}>${FAN_LABEL(f)}</option>`).join("")}</select>
+            </label>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sh"><ha-icon icon="mdi:calendar-clock"></ha-icon>4 · Zeitpläne ${sw("plan_enabled", "an")}</div>
+          <div class="sd">Kühlfenster je Raum (Tab „Zeitplan“), nur solange jemand zu Hause ist. Sind beide weg, endet der Zeitplan.</div>
+          <div class="sgrid">
+            ${num("start_delta", "Einschalten ab Plan-Soll plus", "K", 0.5, 0, 10, `z. B. Plan 23 °C → an ab ${fmtT(23 + Number(s.start_delta))} °C`)}
+          </div>
+        </div>
+
+        ${dirty ? `<div class="savebar"><span>Änderungen noch nicht gespeichert</span><span><button class="txt" data-s-cancel>Verwerfen</button><button class="txt primary" data-s-save>Speichern</button></span></div>` : ""}
+
+        <div class="sec">
+          <div class="sh"><ha-icon icon="mdi:floor-plan"></ha-icon>Räume <small class="muted">· wirkt sofort</small></div>
+          <table class="rtable">
+            <thead><tr><th>Raum</th><th>Zeitplan</th><th>Hitzeschutz</th><th>Ziel jetzt</th></tr></thead>
+            <tbody>${rooms}</tbody>
+          </table>
+        </div>
+
+        <div class="sd">Gelten Zeitplan und Hitzeschutz gleichzeitig, zählt der niedrigere Soll.
+          Klimaplan schaltet nur Geräte ein, die aus sind, und nur selbst eingeschaltete wieder aus.
+          Von Hand ausgeschaltet oder Modus geändert → Pause in diesem Raum bis zum nächsten Zeitfenster bzw. bis der Hitzeschutz endet.</div>
+        <div class="hint">Verknüpft: Außen ${ent(d.options.outside_entity)} · Personen ${(d.options.persons || []).map(ent).join(", ") || "–"}
+          ${motion.length ? ` · Melder ${motion.map(ent).join(", ")}` : ""}
+          · Sperre ${ent(d.options.block_entity)}${d.options.vacation_entity ? ` · Urlaub ${ent(d.options.vacation_entity)}` : ""}.
+          Ändern: Einstellungen → Geräte &amp; Dienste → Klimaplan → Konfigurieren.</div>
       </div>`;
+  }
+
+  // Ampel: warum kühlt die Automatik gerade (nicht)?
+  _renderConditions(compact = false) {
+    const d = this._data;
+    const s = d.settings;
+    const ent = (e) => (e ? esc(this._st(e)?.attributes?.friendly_name || e) : "");
+    const persons = (d.options.persons || []).filter((p) => this._st(p)?.state === "home").map(ent);
+    const motionSeen = (d.motion_today || []).length;
+    const motionAll = (d.options.motion_entities || []).length;
+    let who = persons.length ? `${persons.join(", ")} zu Hause` : d.present_today ? "heute schon jemand da gewesen" : "heute noch niemand da";
+    if (motionAll && s.motion_min > 0) who += ` · Melder heute ${motionSeen}/${s.motion_min}`;
+    const items = [
+      [s.enabled, "Automatik", s.enabled ? "an" : "aus – nur Bedienung von Hand"],
+      [d.hot, "Hitzetag", `außen ${fmtT(d.outside)} °C, ${d.hot ? "über" : "nicht über"} ${fmtT(s.outside_limit, 0)} °C`],
+      [d.present_today, "Heute jemand da", who],
+      [!d.blocked, "Sperre", d.blocked ? `${ent(d.options.block_entity)} ist an` : "frei"],
+    ];
+    const ok = items.every((i) => i[0]);
+    if (compact) {
+      return `<div class="conds compact">
+        ${items.map(([on, l, t]) => `<span class="cond ${on ? "yes" : "no"}" title="${esc(t)}"><ha-icon icon="${on ? "mdi:check-circle" : "mdi:close-circle"}"></ha-icon><b>${l}</b>${on ? "" : `<span>${t}</span>`}</span>`).join("")}
+        <div class="cres">${ok ? "Automatik bereit – Räume kühlen, sobald ihre Schwelle erreicht ist." : "Automatik kühlt gerade nicht – Grund rot markiert, Details im Tab „Automatik“."}</div>
+      </div>`;
+    }
+    return `<div class="conds ${ok ? "ok" : ""}">
+      ${items.map(([on, l, t]) => `<div class="cond ${on ? "yes" : "no"}"><ha-icon icon="${on ? "mdi:check-circle" : "mdi:close-circle"}"></ha-icon><div><b>${l}</b><span>${t}</span></div></div>`).join("")}
+      <div class="cres">${ok ? "Automatik bereit – Räume kühlen, sobald ihre Schwelle erreicht ist." : "Automatik kühlt gerade nicht (rot markiert ist der Grund)."}</div>
+    </div>`;
   }
 
   // --------------------------------------------------------------- Ereignisse
@@ -665,11 +727,33 @@ const STYLE = `
   .field { display:flex; align-items:center; gap:10px; margin:12px 0 4px; }
   .field label { color: var(--secondary-text-color); font-size:.9em; }
   .dact { display:flex; justify-content:space-between; align-items:center; margin-top:12px; }
-  .autotab { display:flex; flex-direction:column; gap:12px; }
+  .plantop { margin-bottom:10px; }
+  .autotab { display:flex; flex-direction:column; gap:14px; }
+  .sec { border:1px solid var(--divider-color); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .sh { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .sh ha-icon { color: var(--kp-cool); }
+  .sh .toggle { margin-left:auto; font-weight:500; }
+  .sd { font-size:.85em; color: var(--secondary-text-color); line-height:1.4; }
+  .sfield small { font-size:.85em; }
+  .savebar { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:8px 12px; border-radius:10px; background: var(--card-background-color); border:2px solid var(--kp-cool); box-shadow:0 2px 10px rgba(0,0,0,.15); }
+  .conds { display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:6px; margin-bottom:12px; }
+  .autotab .conds { margin-bottom:0; }
+  .cond { display:flex; align-items:center; gap:6px; font-size:.85em; padding:6px 8px; border-radius:8px; background: rgba(219,68,55,.1); min-width:0; }
+  .cond.yes { background: rgba(67,160,71,.1); }
+  .cond ha-icon { --mdc-icon-size:18px; color:#d32f2f; flex:none; }
+  .cond.yes ha-icon { color:#43a047; }
+  .cond > div { display:flex; flex-direction:column; min-width:0; }
+  .cond span { color: var(--secondary-text-color); }
+  .conds.compact { display:flex; flex-wrap:wrap; gap:6px; }
+  .conds.compact .cond { padding:4px 9px; border-radius:14px; }
+  .conds.compact .cond span { margin-left:4px; }
+  .conds.compact .cres { flex-basis:100%; }
+  .cres { grid-column: 1 / -1; font-size:.8em; color: var(--secondary-text-color); }
   .rule { display:flex; gap:8px; font-size:.88em; line-height:1.45; padding:10px 12px; border-radius:10px; background: var(--kp-cool-bg); }
   .rule ha-icon { color: var(--kp-cool); flex:none; }
   .tgrid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
-  .sgrid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:10px; }
+  .sgrid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px; }
   .sfield { display:flex; flex-direction:column; gap:4px; font-size:.85em; color:var(--secondary-text-color); }
   .sfield .inp { display:flex; align-items:center; gap:4px; }
   .sfield .inp input { flex:1; width:100%; }

@@ -3,12 +3,20 @@
     "step": {
       "user": {
         "title": "Klimaplan",
-        "description": "Kühlpläne und Hitzeschutz für Klimageräte.",
+        "description": "Kühlpläne und Hitzeschutz für Klimageräte. Alles lässt sich später unter „Konfigurieren“ ändern; Grenzwerte und Räume stellst du in der Karte ein.",
         "data": {
           "outside_entity": "Außentemperatur",
           "persons": "Personen (Anwesenheit)",
           "vacation_entity": "Urlaub (optional, an = Urlaub)",
-          "block_entity": "Kühlen sperren, wenn an (optional, z. B. Heizperiode)"
+          "block_entity": "Kühlen sperren, wenn an (optional, z. B. Heizperiode)",
+          "motion_entities": "Bewegungs-/Präsenzmelder (heute jemand da)"
+        },
+        "data_description": {
+          "outside_entity": "Sensor für die Außentemperatur. Entscheidet über den Hitzetag.",
+          "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Für Zeitpläne muss gerade jemand zu Hause sein.",
+          "motion_entities": "Alternativ zu den Personen: Haben heute genug verschiedene Melder ausgelöst (Anzahl in der Karte), gilt der Tag ebenfalls als „jemand da“.",
+          "vacation_entity": "Optional. Ist diese Entität an, kühlt die Automatik nicht.",
+          "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer."
         }
       }
     },
@@ -25,8 +33,17 @@
           "outside_entity": "Außentemperatur",
           "persons": "Personen (Anwesenheit)",
           "vacation_entity": "Urlaub (optional, an = Urlaub)",
-          "block_entity": "Kühlen sperren, wenn an (optional, z. B. Heizperiode)"
-        }
+          "block_entity": "Kühlen sperren, wenn an (optional, z. B. Heizperiode)",
+          "motion_entities": "Bewegungs-/Präsenzmelder (heute jemand da)"
+        },
+        "data_description": {
+          "outside_entity": "Sensor für die Außentemperatur. Entscheidet über den Hitzetag.",
+          "persons": "War heute eine dieser Personen zu Hause, gilt der Tag als „jemand da“ (kein Urlaub). Für Zeitpläne muss gerade jemand zu Hause sein.",
+          "motion_entities": "Alternativ zu den Personen: Haben heute genug verschiedene Melder ausgelöst (Anzahl in der Karte), gilt der Tag ebenfalls als „jemand da“.",
+          "vacation_entity": "Optional. Ist diese Entität an, kühlt die Automatik nicht.",
+          "block_entity": "Optional. Solange diese Entität an ist (z. B. Heizperiode), kühlt die Automatik nicht. Bedienung von Hand geht immer."
+        },
+        "description": "Kühlpläne und Hitzeschutz für Klimageräte. Alles lässt sich später unter „Konfigurieren“ ändern; Grenzwerte und Räume stellst du in der Karte ein."
       }
     }
   },
@@ -143,6 +160,14 @@
         },
         "presence_cutoff": {
           "name": "presence_cutoff",
+          "description": ""
+        },
+        "protect_on": {
+          "name": "protect_on",
+          "description": ""
+        },
+        "motion_min": {
+          "name": "motion_min",
           "description": ""
         }
       }

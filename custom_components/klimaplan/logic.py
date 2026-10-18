@@ -3,7 +3,8 @@
 Begriffe
 - Fenster: ein Zeitraum am Tag, in dem gekühlt werden darf ({start, end, temp, fan}).
 - Hitzetag: Außentemperatur über der Grenze (mit Hysterese beim Abschalten).
-- Anwesend heute: jemand war seit der Stichzeit (Standard 05:00) zu Hause – also kein Urlaub.
+- Anwesend heute: heute (seit 00:00) war jemand zu Hause oder mindestens N Bewegungsmelder haben
+  ausgelöst – also kein Urlaub.
 """
 
 from __future__ import annotations
@@ -22,10 +23,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "protect_enabled": True,  # Hitzeschutz
     "outside_limit": 30.0,    # Hitzetag ab (°C, „über“)
     "outside_hyst": 2.0,      # Hitzetag endet unter Grenze − Hysterese
-    "start_delta": 2.0,       # Klima startet erst bei Ist ≥ Soll + start_delta
+    "start_delta": 2.0,       # Zeitplan: Klima startet erst bei Ist ≥ Plan-Soll + start_delta
+    "protect_on": 28.0,       # Hitzeschutz: Klima startet ab dieser Innentemperatur
     "protect_temp": 25.0,     # Soll im Hitzeschutz
     "protect_fan": "auto",    # Lüfter im Hitzeschutz
-    "presence_cutoff": "05:00",  # „anwesend heute“: seit dieser Uhrzeit jemand zu Hause
+    "presence_cutoff": "00:00",  # „anwesend heute“ zählt ab dieser Uhrzeit (Tagesbeginn)
+    "motion_min": 2,          # „anwesend heute“ auch, wenn so viele verschiedene Melder ausgelöst haben (0 = aus)
 }
 
 
@@ -139,18 +142,24 @@ def room_target(*, room: dict[str, Any], settings: dict[str, Any], now: datetime
         w = window_at(room.get("plan") or {}, now)
         if w is not None:
             candidates.append({"temp": w["temp"], "fan": w.get("fan"), "source": "plan",
-                               "key": f"plan:{day_key(now)}:{w['start']}", "until": w["end"]})
+                               "key": f"plan:{day_key(now)}:{w['start']}", "until": w["end"],
+                               "start_at": w["temp"] + float(settings["start_delta"])})
     if settings["protect_enabled"] and room.get("protect", True):
         candidates.append({"temp": float(settings["protect_temp"]), "fan": settings.get("protect_fan"),
-                           "source": "protect", "key": "protect", "until": None})
+                           "source": "protect", "key": "protect", "until": None,
+                           "start_at": float(settings["protect_on"])})
     if not candidates:
         return None
-    return min(candidates, key=lambda c: (c["temp"], c["source"] != "plan"))
+    best = dict(min(candidates, key=lambda c: (c["temp"], c["source"] != "plan")))
+    # Einschalten, sobald eine der Regeln ihre Schwelle erreicht
+    best["start_at"] = min(c["start_at"] for c in candidates)
+    return best
 
 
-def may_start(current: Any, target: float, delta: float) -> bool:
+def may_start(current: Any, start_at: float) -> bool:
+    """Ist hat die Einschaltschwelle erreicht."""
     c = _num(current)
-    return c is not None and c >= target + delta - 1e-9
+    return c is not None and c >= float(start_at) - 1e-9
 
 
 def climate_setpoint(target: float, attrs: dict[str, Any]) -> float:
@@ -168,8 +177,9 @@ def climate_setpoint(target: float, attrs: dict[str, Any]) -> float:
 def normalize_settings(cfg: dict[str, Any] | None) -> dict[str, Any]:
     out = {**DEFAULT_SETTINGS, **(cfg or {})}
     try:
-        for k in ("outside_limit", "outside_hyst", "start_delta", "protect_temp"):
+        for k in ("outside_limit", "outside_hyst", "start_delta", "protect_temp", "protect_on"):
             out[k] = round(float(out[k]) * 2) / 2
+        out["motion_min"] = int(out["motion_min"])
     except (TypeError, ValueError) as err:
         raise PlanError("Klimaplan: Werte müssen Zahlen sein") from err
     for k in ("enabled", "plan_enabled", "protect_enabled"):
@@ -184,5 +194,11 @@ def normalize_settings(cfg: dict[str, Any] | None) -> dict[str, Any]:
         raise PlanError("Einschaltabstand: 0 bis 10 K")
     if not 16 <= out["protect_temp"] <= 30:
         raise PlanError("Hitzeschutz-Soll: 16 bis 30 °C")
+    if not 18 <= out["protect_on"] <= 40:
+        raise PlanError("Hitzeschutz ab: 18 bis 40 °C")
+    if out["protect_on"] < out["protect_temp"]:
+        raise PlanError("Hitzeschutz ab muss mindestens so hoch sein wie der Hitzeschutz-Soll")
+    if not 0 <= out["motion_min"] <= 10:
+        raise PlanError("Bewegungsmelder: 0 bis 10")
     out["protect_fan"] = out.get("protect_fan") or None
     return out

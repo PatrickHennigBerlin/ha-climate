@@ -58,7 +58,9 @@ class KlimaplanPresent(KlimaplanEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"zuletzt_zuhause": self.manager.last_home, "jemand_zuhause": self.manager.anyone_home(),
-                "stichzeit": self.manager.settings["presence_cutoff"]}
+                "tagesbeginn": self.manager.settings["presence_cutoff"],
+                "melder_heute": self.manager.motion_today(dt_util.now()),
+                "melder_noetig": self.manager.settings.get("motion_min")}
 
 
 class KlimaplanRoomActive(KlimaplanRoomEntity, BinarySensorEntity):

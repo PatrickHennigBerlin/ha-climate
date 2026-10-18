@@ -3,12 +3,20 @@
     "step": {
       "user": {
         "title": "Klimaplan",
-        "description": "Cooling schedules and heat protection for air conditioners.",
+        "description": "Cooling schedules and heat protection for air conditioners. All values can be changed later under Configure.",
         "data": {
           "outside_entity": "Outdoor temperature",
           "persons": "Persons (presence)",
           "vacation_entity": "Vacation (optional, on = vacation)",
-          "block_entity": "Block cooling while on (optional, e.g. heating season)"
+          "block_entity": "Block cooling while on (optional, e.g. heating season)",
+          "motion_entities": "Motion / presence sensors (someone was home today)"
+        },
+        "data_description": {
+          "outside_entity": "Outdoor temperature sensor; decides the hot day.",
+          "persons": "If one of these persons was home today, the day counts as occupied (no vacation). Schedules additionally need someone home right now.",
+          "motion_entities": "Alternative to persons: enough different sensors triggered today also count as occupied.",
+          "vacation_entity": "Optional. While on, no automatic cooling.",
+          "block_entity": "Optional. While on (e.g. heating season), no automatic cooling. Manual control always works."
         }
       }
     },
@@ -25,8 +33,17 @@
           "outside_entity": "Outdoor temperature",
           "persons": "Persons (presence)",
           "vacation_entity": "Vacation (optional, on = vacation)",
-          "block_entity": "Block cooling while on (optional, e.g. heating season)"
-        }
+          "block_entity": "Block cooling while on (optional, e.g. heating season)",
+          "motion_entities": "Motion / presence sensors (someone was home today)"
+        },
+        "data_description": {
+          "outside_entity": "Outdoor temperature sensor; decides the hot day.",
+          "persons": "If one of these persons was home today, the day counts as occupied (no vacation). Schedules additionally need someone home right now.",
+          "motion_entities": "Alternative to persons: enough different sensors triggered today also count as occupied.",
+          "vacation_entity": "Optional. While on, no automatic cooling.",
+          "block_entity": "Optional. While on (e.g. heating season), no automatic cooling. Manual control always works."
+        },
+        "description": "Cooling schedules and heat protection for air conditioners. All values can be changed later under Configure."
       }
     }
   },
@@ -143,6 +160,14 @@
         },
         "presence_cutoff": {
           "name": "presence_cutoff",
+          "description": ""
+        },
+        "protect_on": {
+          "name": "protect_on",
+          "description": ""
+        },
+        "motion_min": {
+          "name": "motion_min",
           "description": ""
         }
       }

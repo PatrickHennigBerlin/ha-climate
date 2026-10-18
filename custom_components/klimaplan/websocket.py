@@ -77,6 +77,8 @@ async def ws_set_day(hass, manager, msg):
     vol.Optional("outside_hyst"): vol.Coerce(float),
     vol.Optional("start_delta"): vol.Coerce(float),
     vol.Optional("protect_temp"): vol.Coerce(float),
+    vol.Optional("protect_on"): vol.Coerce(float),
+    vol.Optional("motion_min"): vol.Coerce(int),
     vol.Optional("protect_fan"): vol.Any(str, None),
     vol.Optional("presence_cutoff"): str,
 })

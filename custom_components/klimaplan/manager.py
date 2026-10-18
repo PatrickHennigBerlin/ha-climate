@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BLOCK,
+    CONF_MOTION,
     CONF_OUTSIDE,
     CONF_PERSONS,
     CONF_VACATION,
@@ -62,6 +63,8 @@ class KlimaplanManager:
         self.state: dict[str, dict[str, Any]] = {}   # je Raum {owned, since, temp, fan, paused, manual_temp}
         self.last_home: str | None = None            # ISO-Zeit, zuletzt jemand zu Hause
         self.hot: bool = False
+        self.motion_day: str | None = None           # Datum, für das motion_seen gilt
+        self.motion_seen: list[str] = []             # Melder, die heute ausgelöst haben
         self._unsubs: list[CALLBACK_TYPE] = []
 
     # ------------------------------------------------------------------ Optionen
@@ -80,6 +83,26 @@ class KlimaplanManager:
     @property
     def block_entity(self) -> str | None:
         return self.entry.options.get(CONF_BLOCK) or None
+
+    @property
+    def motion_entities(self) -> list[str]:
+        return list(self.entry.options.get(CONF_MOTION) or [])
+
+    def _day_start(self, now: datetime) -> datetime:
+        return presence_threshold(now, self.settings["presence_cutoff"])
+
+    def motion_today(self, now: datetime) -> list[str]:
+        return list(self.motion_seen) if self.motion_day == self._day_start(now).isoformat() else []
+
+    @callback
+    def _note_motion(self, entity_id: str, now: datetime) -> bool:
+        day = self._day_start(now).isoformat()
+        if self.motion_day != day:
+            self.motion_day, self.motion_seen = day, []
+        if entity_id in self.motion_seen:
+            return False
+        self.motion_seen.append(entity_id)
+        return True
 
     def _is_on(self, entity_id: str | None) -> bool:
         if not entity_id:
@@ -102,14 +125,19 @@ class KlimaplanManager:
         return any((st := self.hass.states.get(p)) is not None and st.state == STATE_HOME for p in persons)
 
     def present_today(self, now: datetime) -> bool:
+        """Heute war schon jemand da (kein Urlaub): Person zu Hause oder genug Melder ausgelöst."""
         if self._is_on(self.vacation_entity):
             return False
-        if not self.persons:
+        motion_min = int(self.settings.get("motion_min") or 0)
+        use_motion = bool(self.motion_entities) and motion_min > 0
+        if not self.persons and not use_motion:
             return True
-        if self.anyone_home():
+        if self.persons and self.anyone_home():
             return True
         last = dt_util.parse_datetime(self.last_home) if self.last_home else None
-        return last is not None and last >= presence_threshold(now, self.settings["presence_cutoff"])
+        if last is not None and last >= self._day_start(now):
+            return True
+        return use_motion and len(self.motion_today(now)) >= motion_min
 
     def blocked(self) -> bool:
         return self._is_on(self.block_entity)
@@ -128,10 +156,13 @@ class KlimaplanManager:
         self.state = {rid: st for rid, st in (data.get("state") or {}).items() if rid in self.rooms}
         self.last_home = data.get("last_home")
         self.hot = bool(data.get("hot"))
+        self.motion_day = data.get("motion_day")
+        self.motion_seen = list(data.get("motion_seen") or [])
 
     def as_dict(self) -> dict[str, Any]:
         return {"rooms": self.rooms, "settings": self.settings, "state": self.state,
-                "last_home": self.last_home, "hot": self.hot}
+                "last_home": self.last_home, "hot": self.hot,
+                "motion_day": self.motion_day, "motion_seen": self.motion_seen}
 
     @callback
     def _save(self) -> None:
@@ -146,6 +177,12 @@ class KlimaplanManager:
         watch = [e for e in [self.outside_entity, self.vacation_entity, self.block_entity, *self.persons] if e]
         if watch:
             self._unsubs.append(async_track_state_change_event(self.hass, watch, self._changed_event))
+        if self.motion_entities:
+            now = dt_util.now()
+            for ent in self.motion_entities:
+                if self._is_on(ent):
+                    self._note_motion(ent, now)
+            self._unsubs.append(async_track_state_change_event(self.hass, self.motion_entities, self._motion_event))
         await self.async_apply()
 
     @callback
@@ -159,6 +196,14 @@ class KlimaplanManager:
 
     async def _changed_event(self, event: Event) -> None:
         await self.async_apply()
+
+    async def _motion_event(self, event: Event) -> None:
+        new = event.data.get("new_state")
+        if new is None or new.state != STATE_ON:
+            return
+        if self._note_motion(event.data["entity_id"], dt_util.now()):
+            self._save()
+            await self.async_apply()
 
     # ------------------------------------------------------------------ Status
     def room_status(self, room_id: str, now: datetime | None = None) -> dict[str, Any]:
@@ -184,7 +229,7 @@ class KlimaplanManager:
             "paused": bool(st.get("paused")),
             "waiting": bool(target) and not st.get("owned") and not st.get("paused")
                        and not may_start(klima.attributes.get("current_temperature") if klima else None,
-                                         target["temp"], self.settings["start_delta"]),
+                                         target["start_at"]),
         }
 
     def full_state(self) -> dict[str, Any]:
@@ -192,10 +237,12 @@ class KlimaplanManager:
         return {
             "settings": self.settings,
             "options": {"outside_entity": self.outside_entity, "persons": self.persons,
-                        "vacation_entity": self.vacation_entity, "block_entity": self.block_entity},
+                        "vacation_entity": self.vacation_entity, "block_entity": self.block_entity,
+                        "motion_entities": self.motion_entities},
             "outside": self.outside_value(),
             "hot": self.hot,
             "present_today": self.present_today(now),
+            "motion_today": self.motion_today(now),
             "anyone_home": self.anyone_home(),
             "blocked": self.blocked(),
             "rooms": {rid: {**room, "status": self.room_status(rid, now)} for rid, room in self.rooms.items()},
@@ -313,7 +360,7 @@ class KlimaplanManager:
             return changed
         if hvac != OFF:
             return changed   # läuft schon (von Hand oder Zuheizen) – nicht übernehmen
-        if not may_start(klima.attributes.get("current_temperature"), target["temp"], self.settings["start_delta"]):
+        if not may_start(klima.attributes.get("current_temperature"), target["start_at"]):
             return changed
         value = climate_setpoint(target["temp"], dict(klima.attributes))
         if await self._call("climate", "set_temperature",

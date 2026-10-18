@@ -72,7 +72,8 @@ def _target(now=MON_19, **kw):
 
 def test_room_target():
     t = _target()
-    assert (t["temp"], t["source"], t["until"], t["fan"]) == (23, "plan", "21:00", "auto")
+    assert (t["temp"], t["source"], t["until"], t["fan"], t["start_at"]) == (23, "plan", "21:00", "auto", 25)
+    assert _target(now=MON_19.replace(hour=12))["start_at"] == 28   # Hitzeschutz ab 28 innen
     # außerhalb des Fensters: Hitzeschutz 25
     assert _target(now=MON_19.replace(hour=12))["source"] == "protect"
     # beide weg: kein Plan, nur Hitzeschutz
@@ -90,7 +91,7 @@ def test_room_target():
 
 
 def test_start_and_setpoint():
-    assert may_start(25, 23, 2) and not may_start(24.9, 23, 2) and not may_start(None, 23, 2)
+    assert may_start(25, 25) and not may_start(24.9, 25) and not may_start(None, 25)
     attrs = {"min_temp": 19, "max_temp": 30, "target_temp_step": 0.5}
     assert climate_setpoint(23.2, attrs) == 23 and climate_setpoint(17, attrs) == 19
 

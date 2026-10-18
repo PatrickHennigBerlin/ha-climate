@@ -196,6 +196,8 @@ def _register_services(hass: HomeAssistant) -> None:
         vol.Optional("outside_hyst"): vol.Coerce(float),
         vol.Optional("start_delta"): vol.Coerce(float),
         vol.Optional("protect_temp"): vol.Coerce(float),
+        vol.Optional("protect_on"): vol.Coerce(float),
+        vol.Optional("motion_min"): vol.Coerce(int),
         vol.Optional("protect_fan"): vol.Any(cv.string, None),
         vol.Optional("presence_cutoff"): cv.string,
     }))

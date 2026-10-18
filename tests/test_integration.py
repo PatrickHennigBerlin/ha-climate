@@ -56,7 +56,7 @@ class Env:
         return [x for x in self.calls[kind] if x.data.get("entity_id") == WZ]
 
 
-async def _setup(hass: HomeAssistant, clock, plan=True, outside="31") -> Env:
+async def _setup(hass: HomeAssistant, clock, plan=True, outside="31", motion=False) -> Env:
     await async_setup_component(hass, "http", {})
     await async_setup_component(hass, "websocket_api", {})
     hass.config.components.add("frontend")
@@ -67,9 +67,13 @@ async def _setup(hass: HomeAssistant, clock, plan=True, outside="31") -> Env:
     hass.states.async_set("switch.heizperiode", "off")
     hass.states.async_set("switch.lufter_auto_wohnzimmer", "off")
     calls = {k: async_mock_service(hass, "climate", k) for k in ("set_temperature", "set_hvac_mode", "set_fan_mode")}
-    entry = MockConfigEntry(domain=DOMAIN, title="Klimaplan", unique_id=DOMAIN, options={
-        "outside_entity": "sensor.aussen", "persons": ["person.patrick", "person.franzi"],
-        "block_entity": "switch.heizperiode"})
+    options = {"outside_entity": "sensor.aussen", "persons": ["person.patrick", "person.franzi"],
+               "block_entity": "switch.heizperiode"}
+    if motion:
+        hass.states.async_set("binary_sensor.bewegung_flur", "off")
+        hass.states.async_set("binary_sensor.bewegung_kuche", "off")
+        options["motion_entities"] = ["binary_sensor.bewegung_flur", "binary_sensor.bewegung_kuche"]
+    entry = MockConfigEntry(domain=DOMAIN, title="Klimaplan", unique_id=DOMAIN, options=options)
     entry.add_to_hass(hass)
     with patch("custom_components.klimaplan.add_extra_js_url"):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -97,10 +101,10 @@ async def test_entities(hass, clock):
 
 async def test_protect_starts_only_at_delta(hass, clock):
     env = await _setup(hass, clock)
-    env.klima(current_temperature=26.5)      # Hitzeschutz 25 -> erst ab 27
+    env.klima(current_temperature=27.5)      # Hitzeschutz greift erst ab 28 innen
     await env.at(0)
     assert not env.c("set_temperature")
-    env.klima(current_temperature=27)
+    env.klima(current_temperature=28)
     await env.at(1)
     on = env.c("set_temperature")
     assert on and on[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 25.0}
@@ -264,5 +268,40 @@ async def test_present_today_while_at_work(hass, clock):
     await env.at(-600)                       # 07:00 zu Hause
     env.set("person.patrick", "not_home")    # zur Arbeit
     env.klima(current_temperature=27)
+    env.klima(current_temperature=28)
     await env.at(-300)                       # 12:00, keiner da -> Hitzeschutz läuft trotzdem
     assert env.c("set_temperature")[-1].data["temperature"] == 25.0
+
+
+async def test_presence_by_motion(hass, clock):
+    env = await _setup(hass, clock, motion=True)
+    env.set("person.patrick", "not_home")
+    env.manager.last_home = (clock["t0"] - timedelta(hours=20)).isoformat()   # gestern
+    env.klima(current_temperature=29)
+    await env.at(0)
+    assert not env.c("set_temperature")
+    env.set("binary_sensor.bewegung_flur", "on")       # ein Melder reicht nicht
+    await hass.async_block_till_done()
+    await env.at(1)
+    assert not env.c("set_temperature")
+    env.set("binary_sensor.bewegung_flur", "off")
+    env.set("binary_sensor.bewegung_flur", "on")       # derselbe zählt nicht doppelt
+    await env.at(2)
+    assert not env.c("set_temperature")
+    env.set("binary_sensor.bewegung_kuche", "on")      # zweiter Melder -> heute jemand da
+    await hass.async_block_till_done()
+    await env.at(3)
+    assert env.c("set_temperature")[-1].data["temperature"] == 25.0
+    assert hass.states.get("binary_sensor.klimaplan_anwesend_heute").attributes["melder_heute"] == [
+        "binary_sensor.bewegung_flur", "binary_sensor.bewegung_kuche"]
+    # neuer Tag: Melder zählen neu
+    env.manager.last_home = None
+    clock["now"] = clock["t0"] + timedelta(days=1)
+    assert env.manager.present_today(clock["now"]) is False
+
+
+async def test_presence_since_midnight(hass, clock):
+    env = await _setup(hass, clock)
+    env.set("person.patrick", "not_home")
+    env.manager.last_home = (clock["t0"] - timedelta(hours=15)).isoformat()   # heute 02:00 noch zu Hause
+    assert env.manager.present_today(clock["t0"]) is True
