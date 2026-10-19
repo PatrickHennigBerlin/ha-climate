@@ -438,9 +438,9 @@ class KlimaplanManager:
         if not may_start(klima.attributes.get("current_temperature"), target["start_at"]):
             return changed
         value = climate_setpoint(target["temp"], dict(klima.attributes))
-        # erst Modus, dann Soll: KNX-Klimas werten hvac_mode in set_temperature nicht aus
-        if (await self._call("climate", "set_hvac_mode", {ATTR_ENTITY_ID: ent, "hvac_mode": COOL})
-                and await self._call("climate", "set_temperature", {ATTR_ENTITY_ID: ent, "temperature": value})):
+        # Erst den Soll (Gerät ist noch aus), dann einschalten + Modus (siehe Heizplan: KNX/Intesis)
+        if (await self._call("climate", "set_temperature", {ATTR_ENTITY_ID: ent, "temperature": value})
+                and await self._call("climate", "set_hvac_mode", {ATTR_ENTITY_ID: ent, "hvac_mode": COOL})):
             st.update(owned=True, since=now.isoformat(), temp=value, temp_at=now.isoformat(), fan=None,
                       paused=None, manual_temp=False, key=key)
             _LOGGER.info("Klimaplan: %s kühlt (%s °C, %s)", ent, value, target["source"])
