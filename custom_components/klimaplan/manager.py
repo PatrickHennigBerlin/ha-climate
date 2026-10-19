@@ -49,6 +49,7 @@ _LOGGER = logging.getLogger(__name__)
 COOL = "cool"
 OFF = "off"
 START_RETRY = timedelta(minutes=5)   # nach unbestätigtem Einschalten so lange warten
+STARTUP_GRACE = timedelta(minutes=2)   # nach dem Start: KNX-Klimas zeigen „aus“, bis ihr Status gelesen ist
 SETTLE = timedelta(minutes=2)   # so lange nach eigenem Schalten keine „Handänderung“ annehmen
 
 
@@ -65,6 +66,7 @@ class KlimaplanManager:
         self.settings: dict[str, Any] = dict(DEFAULT_SETTINGS)
         self.state: dict[str, dict[str, Any]] = {}   # je Raum {owned, since, temp, fan, paused, manual_temp}
         self._starting: set[str] = set()   # Klima wird gerade eingeschaltet (klima_start)
+        self._loaded_at: datetime = dt_util.now()
         self._start_failed: dict[str, datetime] = {}   # Einschalten nicht bestätigt -> START_RETRY warten
         self.last_home: str | None = None            # ISO-Zeit, zuletzt jemand zu Hause
         self.hot: bool = False
@@ -156,6 +158,7 @@ class KlimaplanManager:
 
     # ------------------------------------------------------------------ Speicher
     async def async_load(self) -> None:
+        self._loaded_at = dt_util.now()
         data = await self._store.async_load() or {}
         self.rooms = data.get("rooms", {})
         for room in self.rooms.values():
@@ -403,6 +406,8 @@ class KlimaplanManager:
         settled = started is None or now - started >= SETTLE
 
         if st["owned"]:
+            if hvac != COOL and now - self._loaded_at < STARTUP_GRACE:
+                return changed   # direkt nach dem Start meldet die Klima ggf. noch „aus“ (Status nicht gelesen)
             if hvac != COOL and settled:
                 # von Hand aus- oder umgestellt (auch durch „Außer Haus“/„Schlafen gehen“): in Ruhe lassen
                 st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False, paused=key)

@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.3.5";
+const KP_VERSION = "0.3.6";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
