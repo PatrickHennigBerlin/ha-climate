@@ -26,6 +26,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
+from .klima_start import async_start_climate
 from .logic import (
     DAYS,
     DEFAULT_SETTINGS,
@@ -47,6 +48,7 @@ _LOGGER = logging.getLogger(__name__)
 
 COOL = "cool"
 OFF = "off"
+START_RETRY = timedelta(minutes=5)   # nach unbestätigtem Einschalten so lange warten
 SETTLE = timedelta(minutes=2)   # so lange nach eigenem Schalten keine „Handänderung“ annehmen
 
 
@@ -62,6 +64,8 @@ class KlimaplanManager:
         self.rooms: dict[str, dict[str, Any]] = {}
         self.settings: dict[str, Any] = dict(DEFAULT_SETTINGS)
         self.state: dict[str, dict[str, Any]] = {}   # je Raum {owned, since, temp, fan, paused, manual_temp}
+        self._starting: set[str] = set()   # Klima wird gerade eingeschaltet (klima_start)
+        self._start_failed: dict[str, datetime] = {}   # Einschalten nicht bestätigt -> START_RETRY warten
         self.last_home: str | None = None            # ISO-Zeit, zuletzt jemand zu Hause
         self.hot: bool = False
         self.hot_day: str | None = None              # Tag, für den measured_max/forecast_max gelten
@@ -370,6 +374,8 @@ class KlimaplanManager:
         return None
 
     async def _apply_room(self, room_id: str, room: dict[str, Any], now: datetime) -> bool:
+        if room_id in self._starting:
+            return False   # Klima wird gerade eingeschaltet (wartet auf Bestätigung)
         ent = room["climate"]
         klima = self.hass.states.get(ent)
         hvac = klima.state if klima is not None else None
@@ -437,18 +443,38 @@ class KlimaplanManager:
             return changed   # läuft schon (von Hand oder Zuheizen) – nicht übernehmen
         if not may_start(klima.attributes.get("current_temperature"), target["start_at"]):
             return changed
+        failed = self._start_failed.get(room_id)
+        if failed is not None and now - failed < START_RETRY:
+            return changed
         value = climate_setpoint(target["temp"], dict(klima.attributes))
-        # Erst den Soll (Gerät ist noch aus), dann einschalten + Modus (siehe Heizplan: KNX/Intesis)
-        if (await self._call("climate", "set_temperature", {ATTR_ENTITY_ID: ent, "temperature": value})
-                and await self._call("climate", "set_hvac_mode", {ATTR_ENTITY_ID: ent, "hvac_mode": COOL})):
-            st.update(owned=True, since=now.isoformat(), temp=value, temp_at=now.isoformat(), fan=None,
-                      paused=None, manual_temp=False, key=key)
-            _LOGGER.info("Klimaplan: %s kühlt (%s °C, %s)", ent, value, target["source"])
-            if target.get("fan"):
-                await self.async_set_fan(room_id, target["fan"])
-                st["fan"] = target["fan"]
-            return True
+        # Zuerst EIN und auf die Bestätigung des Geräts warten, dann Modus und Soll (klima_start).
+        # Läuft im Hintergrund; solange bleibt der Raum hier unangetastet.
+        self._starting.add(room_id)
+        self.hass.async_create_task(self._start(room_id, ent, value, key, target), f"klimaplan_start_{room_id}")
         return changed
+
+    async def _start(self, room_id: str, ent: str, value: float, key: Any, target: dict[str, Any]) -> None:
+        try:
+            ok = await async_start_climate(self.hass, ent, COOL, value, self._call)
+            st = self.state.setdefault(room_id, {"owned": False, "since": None, "temp": None, "fan": None,
+                                                 "paused": None, "manual_temp": False})
+            if ok:
+                self._start_failed.pop(room_id, None)
+                now = dt_util.now().isoformat()
+                st.update(owned=True, since=now, temp=value, temp_at=now, fan=None,
+                          paused=None, manual_temp=False, key=key)
+                _LOGGER.info("Klimaplan: %s kühlt (%s °C, %s)", ent, value, target["source"])
+                if target.get("fan"):
+                    await self.async_set_fan(room_id, target["fan"])
+                    st["fan"] = target["fan"]
+            else:
+                self._start_failed[room_id] = dt_util.now()
+                _LOGGER.warning("Klimaplan: %s hat das Einschalten nicht bestätigt, neuer Versuch in %s min",
+                                ent, int(START_RETRY.total_seconds() // 60))
+        finally:
+            self._starting.discard(room_id)
+            self._save()
+            async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
     # ------------------------------------------------------------------ Änderungen
     async def _changed(self, reload: bool = False) -> None:
