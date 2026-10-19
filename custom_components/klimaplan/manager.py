@@ -455,7 +455,13 @@ class KlimaplanManager:
 
     async def _start(self, room_id: str, ent: str, value: float, key: Any, target: dict[str, Any]) -> None:
         try:
-            ok = await async_start_climate(self.hass, ent, COOL, value, self._call)
+            # Lüfter: Auto, wenn die Regel nichts anderes sagt; der Auto-Schalter gehört zur Einschaltfolge
+            fan = target.get("fan") or "auto"
+            klima = self.hass.states.get(ent)
+            modes = list(klima.attributes.get("fan_modes") or []) if klima else []
+            auto_switch = self.rooms.get(room_id, {}).get("fan_auto_switch")
+            fan_in_start = auto_switch if fan == "auto" and "auto" not in modes and auto_switch else None
+            ok = await async_start_climate(self.hass, ent, COOL, value, self._call, fan_auto_switch=fan_in_start)
             st = self.state.setdefault(room_id, {"owned": False, "since": None, "temp": None, "fan": None,
                                                  "paused": None, "manual_temp": False})
             if ok:
@@ -464,9 +470,9 @@ class KlimaplanManager:
                 st.update(owned=True, since=now, temp=value, temp_at=now, fan=None,
                           paused=None, manual_temp=False, key=key)
                 _LOGGER.info("Klimaplan: %s kühlt (%s °C, %s)", ent, value, target["source"])
-                if target.get("fan"):
-                    await self.async_set_fan(room_id, target["fan"])
-                    st["fan"] = target["fan"]
+                if not fan_in_start:
+                    await self.async_set_fan(room_id, fan)
+                st["fan"] = fan
             else:
                 self._start_failed[room_id] = dt_util.now()
                 _LOGGER.warning("Klimaplan: %s hat das Einschalten nicht bestätigt, neuer Versuch in %s min",
