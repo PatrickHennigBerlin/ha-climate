@@ -53,6 +53,9 @@ class Env:
         await self.hass.async_block_till_done()
 
     def c(self, kind):
+        if kind in ("cool_on", "off"):
+            mode = "cool" if kind == "cool_on" else "off"
+            return [x for x in self.c("set_hvac_mode") if x.data.get("hvac_mode") == mode]
         return [x for x in self.calls[kind] if x.data.get("entity_id") == WZ]
 
 
@@ -107,7 +110,7 @@ async def test_protect_starts_only_at_delta(hass, clock):
     env.klima(current_temperature=28)
     await env.at(1)
     on = env.c("set_temperature")
-    assert on and on[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 25.0}
+    assert on and on[-1].data == {"entity_id": WZ, "temperature": 25.0} and env.c("cool_on")
     assert env.calls["switch_on"][-1].data["entity_id"] == "switch.lufter_auto_wohnzimmer"
     assert hass.states.get("binary_sensor.klimaplan_wohnzimmer_kuhlt").state == "on"
 
@@ -119,11 +122,11 @@ async def test_protect_starts_only_at_delta(hass, clock):
     env.klima("cool", temperature=23)
     env.set("sensor.aussen", "24")
     await env.at(200)
-    assert not env.c("set_hvac_mode")
+    assert not env.c("off")
     assert hass.states.get("binary_sensor.klimaplan_hitzetag").state == "on"
     # neuer Tag (00:01), außen 24 °C -> kein Hitzetag -> aus
     await env.at(7 * 60 + 1)
-    assert env.c("set_hvac_mode")[-1].data == {"entity_id": WZ, "hvac_mode": "off"}
+    assert env.c("off")[-1].data == {"entity_id": WZ, "hvac_mode": "off"}
     assert env.manager.state["klima_wohnzimmer"]["owned"] is False
 
 
@@ -145,7 +148,7 @@ async def test_both_away_plan_falls_back_and_vacation(hass, clock):
     env.set("person.patrick", "not_home")
     await env.at(80)
     assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "temperature": 25.0}
-    assert not env.c("set_hvac_mode")
+    assert not env.c("off")
 
 
 async def test_both_away_without_protect_switches_off(hass, clock):
@@ -158,7 +161,7 @@ async def test_both_away_without_protect_switches_off(hass, clock):
     env.klima("cool", temperature=23)
     env.set("person.patrick", "not_home")
     await env.at(80)
-    assert env.c("set_hvac_mode")[-1].data == {"entity_id": WZ, "hvac_mode": "off"}
+    assert env.c("off")[-1].data == {"entity_id": WZ, "hvac_mode": "off"}
 
 
 async def test_nobody_today_no_cooling(hass, clock):
@@ -187,7 +190,7 @@ async def test_manual_off_pauses_until_source_changes(hass, clock):
     await env.at(10)
     assert len(env.c("set_temperature")) == 1   # bleibt aus
     await env.at(61)                         # Planfenster beginnt -> neue Quelle -> wieder an
-    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 23.0}
+    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "temperature": 23.0} and env.c("cool_on")
 
 
 async def test_manual_setpoint_kept(hass, clock):
@@ -264,7 +267,7 @@ async def test_plan_needs_outside_and_delta(hass, clock):
     assert not env.c("set_temperature")
     env.klima(current_temperature=25)
     await env.at(67)
-    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 23.0}
+    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "temperature": 23.0} and env.c("cool_on")
 
 
 async def test_present_today_while_at_work(hass, clock):
@@ -317,7 +320,7 @@ async def test_plan_runs_while_away_by_default(hass, clock):
     env.set("person.patrick", "not_home")    # war heute da (last_home), jetzt weg
     env.klima(current_temperature=25)
     await env.at(65)
-    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "hvac_mode": "cool", "temperature": 23.0}
+    assert env.c("set_temperature")[-1].data == {"entity_id": WZ, "temperature": 23.0} and env.c("cool_on")
     assert hass.states.get("switch.klimaplan_zeitplane_nur_wenn_jemand_zu_hause").state == "off"
 
 

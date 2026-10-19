@@ -1,7 +1,7 @@
 """Konstanten für Klimaplan."""
 
 DOMAIN = "klimaplan"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 STORAGE_KEY = "klimaplan"
 STORAGE_VERSION = 1
