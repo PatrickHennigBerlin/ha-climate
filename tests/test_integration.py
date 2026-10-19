@@ -341,3 +341,14 @@ async def test_hot_day_by_forecast(hass, clock):
     await hass.services.async_call(DOMAIN, "set_settings", {"use_forecast": False}, blocking=True)
     await env.at(1)
     assert hass.states.get("binary_sensor.klimaplan_hitzetag").state == "off"
+
+
+async def test_heizplan_owned_unit_is_left_alone(hass, clock):
+    env = await _setup(hass, clock)
+    hass.states.async_set("binary_sensor.heizplan_zuheizen_wohnzimmer", "on",
+                          {"klima": WZ, "quelle": "Boost", "boost": True})
+    env.klima("heat", current_temperature=28)
+    await env.at(0)
+    assert not env.c("set_temperature") and not env.c("off")
+    st = env.manager.room_status("klima_wohnzimmer")
+    assert st["heizplan"] == "Boost" and st["paused"] is False

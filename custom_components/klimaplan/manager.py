@@ -272,6 +272,7 @@ class KlimaplanManager:
             "active": bool(st.get("owned")),
             "since": st.get("since"),
             "paused": bool(st.get("paused")),
+            "heizplan": self.heizplan_owner(room["climate"]),
             "waiting": bool(target) and not st.get("owned") and not st.get("paused")
                        and not may_start(klima.attributes.get("current_temperature") if klima else None,
                                          target["start_at"]),
@@ -355,6 +356,19 @@ class KlimaplanManager:
             self._save()
         async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
+    def heizplan_owner(self, climate: str) -> str | None:
+        """Steuert die Integration Heizplan dieses Klimagerät gerade (Zuheizen oder Boost)?
+
+        Erkennung über deren Entitäten binary_sensor.heizplan_* mit Attribut klima = climate.
+        -> "Boost" / "Zuheizen" oder None.
+        """
+        for st in self.hass.states.async_all("binary_sensor"):
+            if not st.entity_id.startswith("binary_sensor.heizplan_") or st.state != STATE_ON:
+                continue
+            if st.attributes.get("klima") == climate:
+                return st.attributes.get("quelle") or ("Boost" if st.attributes.get("boost") else "Zuheizen")
+        return None
+
     async def _apply_room(self, room_id: str, room: dict[str, Any], now: datetime) -> bool:
         ent = room["climate"]
         klima = self.hass.states.get(ent)
@@ -363,6 +377,13 @@ class KlimaplanManager:
             return False
         st = self.state.setdefault(room_id, {"owned": False, "since": None, "temp": None, "fan": None,
                                              "paused": None, "manual_temp": False})
+        if self.heizplan_owner(ent):
+            # Heizplan heizt mit dieser Klima: nichts tun, nicht als Handänderung werten
+            if st.get("owned"):
+                st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False)
+                _LOGGER.info("Klimaplan: %s an Heizplan übergeben", ent)
+                return True
+            return False
         target = self._target(room, now)
         key = target["key"] if target else None
         changed = False

@@ -3,7 +3,7 @@
  * Kühl-Zeitpläne je Raum und Hitzeschutz-Automatik.
  * Gehört zur Integration custom_components/klimaplan (wird von ihr ausgeliefert).
  */
-const KP_VERSION = "0.3.1";
+const KP_VERSION = "0.3.2";
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABEL = { mon: "Mo", tue: "Di", wed: "Mi", thu: "Do", fri: "Fr", sat: "Sa", sun: "So" };
 const DAY_LONG = { mon: "Montag", tue: "Dienstag", wed: "Mittwoch", thu: "Donnerstag", fri: "Freitag", sat: "Samstag", sun: "Sonntag" };
@@ -250,6 +250,7 @@ class KlimaplanCard extends HTMLElement {
     const t = s.target;
     const src = t ? (t.source === "plan" ? `Plan bis ${t.until}` : "Hitzeschutz") : "";
     if (hvac === "unavailable" || hvac === "unknown" || !st) return ["off", "mdi:lan-disconnect", "nicht erreichbar"];
+    if (s.heizplan && hvac && hvac !== "off") return ["heizplan", "mdi:fire", `Heizplan · ${s.heizplan}`];
     if (s.active) return ["auto", "mdi:robot", `Automatik · ${src}`];
     if (hvac && hvac !== "off") return ["manual", "mdi:hand-back-right", "Manuell"];
     if (s.paused) return ["pause", "mdi:pause-circle-outline", "Pausiert bis Wechsel"];
@@ -675,6 +676,7 @@ const STYLE = `
   .badge ha-icon { --mdc-icon-size:14px; width:14px; height:14px; flex:none; }
   .badge.auto { background: var(--kp-cool-bg); color: var(--kp-cool); font-weight:600; }
   .badge.manual { background: rgba(255,152,0,.2); }
+  .badge.heizplan { background: rgba(232,89,12,.16); color:#c2410c; font-weight:600; }
   .badge.pause { background: rgba(156,39,176,.14); }
   .badge.wait { background: rgba(3,169,244,.1); }
   .main { display:flex; align-items:flex-end; gap:16px; }
