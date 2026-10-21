@@ -26,7 +26,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
-from .klima_start import async_start_climate
+from .klima_start import async_set_fan as klima_set_fan, async_start_climate
 from .logic import (
     DAYS,
     DEFAULT_SETTINGS,
@@ -320,24 +320,11 @@ class KlimaplanManager:
             return False
 
     async def async_set_fan(self, room_id: str, fan: str | None) -> None:
-        """Lüfter setzen: 'auto' über fan_mode auto oder Auto-Schalter, sonst Stufe."""
+        """Lüfter setzen: 'auto' über fan_mode auto oder Auto-Schalter, sonst Stufe (Schritt für Schritt bestätigt)."""
         if not fan:
             return
         room = self.rooms[room_id]
-        ent = room["climate"]
-        klima = self.hass.states.get(ent)
-        modes = list(klima.attributes.get("fan_modes") or []) if klima else []
-        auto_switch = room.get("fan_auto_switch")
-        if fan == "auto":
-            if "auto" in modes:
-                await self._call("climate", "set_fan_mode", {ATTR_ENTITY_ID: ent, "fan_mode": "auto"})
-            elif auto_switch:
-                await self._call(auto_switch.split(".", 1)[0], "turn_on", {ATTR_ENTITY_ID: auto_switch})
-            return
-        if auto_switch and self._is_on(auto_switch):
-            await self._call(auto_switch.split(".", 1)[0], "turn_off", {ATTR_ENTITY_ID: auto_switch})
-        if fan in modes:
-            await self._call("climate", "set_fan_mode", {ATTR_ENTITY_ID: ent, "fan_mode": fan})
+        await klima_set_fan(self.hass, room["climate"], fan, self._call, auto_switch=room.get("fan_auto_switch"))
 
     async def async_apply(self) -> None:
         now = dt_util.now()
