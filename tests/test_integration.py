@@ -352,3 +352,28 @@ async def test_heizplan_owned_unit_is_left_alone(hass, clock):
     assert not env.c("set_temperature") and not env.c("off")
     st = env.manager.room_status("klima_wohnzimmer")
     assert st["heizplan"] == "Boost" and st["paused"] is False
+
+
+async def test_aus_wird_bestaetigt_und_wiederholt(hass, clock, monkeypatch):
+    """Wie Heizplan 29.10.2026: AUS ohne Bestätigung wird wiederholt, nach 3 Runden gemeldet."""
+    from custom_components.klimaplan import klima_start, manager as mgr
+
+    env = await _setup(hass, clock)
+    reads = async_mock_service(hass, "knx", "read")
+    async_mock_service(hass, "homeassistant", "update_entity")
+    events = []
+    hass.bus.async_listen(mgr.EVENT_STOP_FAILED, events.append)
+    env.klima(current_temperature=28)
+    await env.at(1)
+    env.klima("cool", temperature=25)
+    env.set("sensor.aussen", "24")
+    monkeypatch.setattr(klima_start, "knx_state_addresses", lambda h, e: ("3/2/7", None))
+    monkeypatch.setattr(klima_start, "WAIT_SPONTANEOUS", 0.02)
+    monkeypatch.setattr(klima_start, "WAIT_READ", 0.02)
+    await env.at(7 * 60 + 1)                         # neuer Tag -> aus, nicht bestätigt
+    assert len(env.c("off")) == 3 and len(reads) == 3
+    await env.at(7 * 60 + 3)
+    await env.at(7 * 60 + 5)
+    assert len(env.c("off")) == 9 and events and events[0].data["entity_id"] == WZ
+    await env.at(7 * 60 + 9)
+    assert len(env.c("off")) == 9

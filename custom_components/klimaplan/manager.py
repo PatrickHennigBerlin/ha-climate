@@ -26,7 +26,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
-from .klima_start import async_set_fan as klima_set_fan, async_start_climate
+from .klima_start import async_set_fan as klima_set_fan, async_start_climate, async_stop_climate
 from .logic import (
     DAYS,
     DEFAULT_SETTINGS,
@@ -50,6 +50,9 @@ COOL = "cool"
 OFF = "off"
 START_RETRY = timedelta(minutes=5)   # nach unbestätigtem Einschalten so lange warten
 STARTUP_GRACE = timedelta(minutes=2)   # nach dem Start: KNX-Klimas zeigen „aus“, bis ihr Status gelesen ist
+STOP_RETRY = timedelta(minutes=2)   # Ausschalten nicht bestätigt -> so lange warten, dann erneut
+STOP_ROUNDS = 3                     # so viele Runden (je bis zu 3 Versuche), dann Meldung und aufgeben
+EVENT_STOP_FAILED = "klimaplan_klima_aus_fehlgeschlagen"
 SETTLE = timedelta(minutes=2)   # so lange nach eigenem Schalten keine „Handänderung“ annehmen
 
 
@@ -68,6 +71,8 @@ class KlimaplanManager:
         self._starting: set[str] = set()   # Klima wird gerade eingeschaltet (klima_start)
         self._loaded_at: datetime = dt_util.now()
         self._start_failed: dict[str, datetime] = {}   # Einschalten nicht bestätigt -> START_RETRY warten
+        self._stopping: set[str] = set()   # Klima wird gerade ausgeschaltet (wartet auf Bestätigung)
+        self._stop_pending: dict[str, dict[str, Any]] = {}   # AUS nicht bestätigt: {at, rounds}
         self.last_home: str | None = None            # ISO-Zeit, zuletzt jemand zu Hause
         self.hot: bool = False
         self.hot_day: str | None = None              # Tag, für den measured_max/forecast_max gelten
@@ -364,11 +369,19 @@ class KlimaplanManager:
         return None
 
     async def _apply_room(self, room_id: str, room: dict[str, Any], now: datetime) -> bool:
-        if room_id in self._starting:
-            return False   # Klima wird gerade eingeschaltet (wartet auf Bestätigung)
+        if room_id in self._starting or room_id in self._stopping:
+            return False   # Klima wird gerade ein-/ausgeschaltet (wartet auf Bestätigung)
         ent = room["climate"]
         klima = self.hass.states.get(ent)
         hvac = klima.state if klima is not None else None
+        pending = self._stop_pending.get(room_id)
+        if pending is not None:
+            if hvac not in (COOL, OFF, None, "unavailable", "unknown") or self.heizplan_owner(ent):
+                self._stop_pending.pop(room_id, None)   # von Hand umgestellt oder Heizplan übernimmt
+            else:
+                if now - pending["at"] >= STOP_RETRY:
+                    self._begin_stop(room_id, ent)       # AUS erneut senden und bestätigen lassen
+                return False
         if hvac in (None, "unavailable", "unknown"):
             return False
         st = self.state.setdefault(room_id, {"owned": False, "since": None, "temp": None, "fan": None,
@@ -402,8 +415,9 @@ class KlimaplanManager:
                 return True
             if target is None:
                 if hvac == COOL:
-                    await self._call("climate", "set_hvac_mode", {ATTR_ENTITY_ID: ent, "hvac_mode": OFF})
-                    _LOGGER.info("Klimaplan: %s aus", ent)
+                    # AUS mit Bestätigung des Geräts (klima_start), im Hintergrund
+                    self._stop_pending[room_id] = {"at": now, "rounds": 0}
+                    self._begin_stop(room_id, ent)
                 st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False)
                 return True
             value = climate_setpoint(target["temp"], dict(klima.attributes))
@@ -472,6 +486,33 @@ class KlimaplanManager:
         finally:
             self._starting.discard(room_id)
             self._save()
+            async_dispatcher_send(self.hass, SIGNAL_UPDATED)
+
+    def _begin_stop(self, room_id: str, ent: str) -> None:
+        self._stopping.add(room_id)
+        self.hass.async_create_task(self._stop(room_id, ent), f"klimaplan_stop_{room_id}")
+
+    async def _stop(self, room_id: str, ent: str) -> None:
+        try:
+            ok = await async_stop_climate(self.hass, ent, self._call, OFF)
+            pending = self._stop_pending.get(room_id)
+            if ok:
+                self._stop_pending.pop(room_id, None)
+                _LOGGER.info("Klimaplan: %s aus (bestätigt)", ent)
+            elif pending is not None:
+                pending["rounds"] += 1
+                pending["at"] = dt_util.now()
+                if pending["rounds"] >= STOP_ROUNDS:
+                    self._stop_pending.pop(room_id, None)
+                    room = self.rooms.get(room_id) or {}
+                    _LOGGER.error("Klimaplan: %s lässt sich nicht ausschalten (%s Runden) – aufgegeben", ent, STOP_ROUNDS)
+                    self.hass.bus.async_fire(EVENT_STOP_FAILED, {
+                        "entity_id": ent, "raum": room.get("name") or room_id, "runden": STOP_ROUNDS})
+                else:
+                    _LOGGER.warning("Klimaplan: %s AUS nicht bestätigt – neuer Versuch in %s min",
+                                    ent, int(STOP_RETRY.total_seconds() // 60))
+        finally:
+            self._stopping.discard(room_id)
             async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
     # ------------------------------------------------------------------ Änderungen

@@ -16,6 +16,12 @@ Home-Assistant-Integration für Klimageräte im Sommer: **Bedienen** (Modus, Lü
 | **Ende** | Gilt kein Soll mehr (Fenster vorbei, alle weg ohne Hitzeschutz, Hitzetag vorbei), schaltet Klimaplan **nur Geräte aus, die es selbst eingeschaltet hat**. |
 | **Hand** | Ausschalten oder Moduswechsel von Hand (auch durch Skripte) pausiert den Raum bis zum nächsten Quellenwechsel (neues Fenster, Hitzeschutz ↔ Plan). Soll von Hand geändert → bleibt bis zum nächsten Wechsel. |
 
+## Ausschalten mit Bestätigung
+
+Bei KNX-Klimas wartet Klimaplan nach dem AUS, bis das Gerät AUS auf seiner Status-Adresse meldet (sonst lesen,
+bis zu 3 Versuche). Bleibt die Bestätigung aus, nach 2 min erneut – insgesamt 3 Runden; dann Event
+`klimaplan_klima_aus_fehlgeschlagen` (`entity_id`, `raum`) für eine Push-Meldung.
+
 ## Lüfter Auto
 
 Hat das Gerät kein `fan_mode: auto` (z. B. KNX-Schnittstellen mit separatem Auto-Objekt), wird je Raum ein
