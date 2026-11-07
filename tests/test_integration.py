@@ -377,3 +377,42 @@ async def test_aus_wird_bestaetigt_und_wiederholt(hass, clock, monkeypatch):
     assert len(env.c("off")) == 9 and events and events[0].data["entity_id"] == WZ
     await env.at(7 * 60 + 9)
     assert len(env.c("off")) == 9
+
+
+async def test_lueften_pausiert_kuehlen(hass, clock):
+    """Lüften im Raum: kein Kühlstart, eigene Klima aus – ohne „von Hand“-Pause; danach normal weiter."""
+    env = await _setup(hass, clock)
+    env.set("switch.heizplan_luften_wohnzimmer", "off")
+    await hass.services.async_call(DOMAIN, "update_room", {
+        "room": "klima_wohnzimmer", "vent_entity": "switch.heizplan_luften_wohnzimmer"}, blocking=True)
+    await hass.async_block_till_done()
+    await hass.async_block_till_done()
+    assert env.manager.rooms["klima_wohnzimmer"]["vent_entity"] == "switch.heizplan_luften_wohnzimmer"
+
+    # Lüften läuft schon: trotz Hitze kein Start
+    env.set("switch.heizplan_luften_wohnzimmer", "on")
+    env.klima(current_temperature=28)
+    await env.at(0)
+    assert not env.c("cool_on")
+    assert env.manager.room_status("klima_wohnzimmer")["venting"] is True
+
+    # Lüften vorbei -> Hitzeschutz startet
+    env.set("switch.heizplan_luften_wohnzimmer", "off")
+    await env.at(1)
+    assert env.c("cool_on")
+    env.klima("cool", temperature=25)
+    await env.at(5)
+
+    # erneut Lüften, Gerät geht durch seine Fenster-Funktion selbst aus -> keine Pause, Besitz abgegeben
+    env.set("switch.heizplan_luften_wohnzimmer", "on")
+    env.klima("off")
+    await env.at(10)
+    st = env.manager.state["klima_wohnzimmer"]
+    assert st["owned"] is False and not st.get("paused")
+    n_on = len(env.c("cool_on"))
+    await env.at(15)
+    assert len(env.c("cool_on")) == n_on
+    # nach dem Lüften: wieder an
+    env.set("switch.heizplan_luften_wohnzimmer", "off")
+    await env.at(20)
+    assert len(env.c("cool_on")) == n_on + 1
