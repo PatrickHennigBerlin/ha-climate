@@ -71,3 +71,19 @@ view: rooms           # rooms | plan | auto
 pip install pytest-homeassistant-custom-component
 pytest
 ```
+
+## Lüften
+
+Je Raum optional `vent_entity` (beliebige Entität, an = Lüften), z. B. der Lüften-Schalter der Integration Heizplan
+(`switch.heizplan_luften_<raum>`):
+
+```yaml
+action: klimaplan.update_room
+data:
+  room: klima_wohnzimmer
+  vent_entity: switch.heizplan_luften_wohnzimmer
+```
+
+Solange sie an ist, startet Klimaplan in dem Raum nicht. Eine von Klimaplan gestartete Klima geht aus (mit
+Bestätigung). Geht das Gerät durch eine eigene Fenster-Funktion selbst aus, gilt das **nicht** als Handänderung
+(keine Pause). Danach entscheidet Klimaplan wieder ganz normal. Die Karte zeigt „Lüften – kühlt nicht“.
