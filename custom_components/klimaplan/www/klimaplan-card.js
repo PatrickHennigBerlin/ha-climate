@@ -250,6 +250,7 @@ class KlimaplanCard extends HTMLElement {
     const t = s.target;
     const src = t ? (t.source === "plan" ? `Plan bis ${t.until}` : "Hitzeschutz") : "";
     if (hvac === "unavailable" || hvac === "unknown" || !st) return ["off", "mdi:lan-disconnect", "nicht erreichbar"];
+    if (s.venting) return ["pause", "mdi:window-open-variant", "Lüften – kühlt nicht"];
     if (s.heizplan && hvac && hvac !== "off") return ["heizplan", "mdi:fire", `Heizplan · ${s.heizplan}`];
     if (s.active) return ["auto", "mdi:robot", `Automatik · ${src}`];
     if (hvac && hvac !== "off") return ["manual", "mdi:hand-back-right", "Manuell"];
