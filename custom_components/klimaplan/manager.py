@@ -201,7 +201,8 @@ class KlimaplanManager:
         if self.forecast_entity:
             self._unsubs.append(async_track_time_change(self.hass, self._forecast_tick, minute=[2, 32], second=0))
             await self.async_update_forecast()
-        watch = [e for e in [self.outside_entity, self.vacation_entity, self.block_entity, *self.persons] if e]
+        vents = [r.get("vent_entity") for r in self.rooms.values() if r.get("vent_entity")]
+        watch = [e for e in [self.outside_entity, self.vacation_entity, self.block_entity, *self.persons, *vents] if e]
         if watch:
             self._unsubs.append(async_track_state_change_event(self.hass, watch, self._changed_event))
         if self.motion_entities:
@@ -285,6 +286,7 @@ class KlimaplanManager:
             "since": st.get("since"),
             "paused": bool(st.get("paused")),
             "heizplan": self.heizplan_owner(room["climate"]),
+            "venting": self._is_on(room.get("vent_entity")),
             "waiting": bool(target) and not st.get("owned") and not st.get("paused")
                        and not may_start(klima.attributes.get("current_temperature") if klima else None,
                                          target["start_at"]),
@@ -391,6 +393,17 @@ class KlimaplanManager:
             if st.get("owned"):
                 st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False)
                 _LOGGER.info("Klimaplan: %s an Heizplan übergeben", ent)
+                return True
+            return False
+        if self._is_on(room.get("vent_entity")):
+            # Lüften im Raum: nicht kühlen. Eigene Klima aus (mit Bestätigung), danach normal weiter –
+            # kein „von Hand geändert“, keine Pause (ein Gerät mit Fenster-Funktion ist ggf. schon aus).
+            if st.get("owned"):
+                if hvac == COOL:
+                    self._stop_pending[room_id] = {"at": now, "rounds": 0}
+                    self._begin_stop(room_id, ent)
+                st.update(owned=False, since=None, temp=None, fan=None, manual_temp=False)
+                _LOGGER.info("Klimaplan: %s – Lüften, Kühlen pausiert", ent)
                 return True
             return False
         target = self._target(room, now)
@@ -550,6 +563,9 @@ class KlimaplanManager:
             reload = True
         if fields.get("fan_auto_switch") is not None:
             room["fan_auto_switch"] = fields["fan_auto_switch"] or None
+        if fields.get("vent_entity") is not None:
+            room["vent_entity"] = fields["vent_entity"] or None
+            reload = True   # Zustandsänderungen der Entität beobachten
         for key in ("plan_enabled", "protect"):
             if fields.get(key) is not None:
                 room[key] = bool(fields[key])

@@ -101,6 +101,10 @@
         "protect": {
           "name": "Hitzeschutz",
           "description": ""
+        },
+        "vent_entity": {
+          "name": "Ventilation entity",
+          "description": "While on, this room does not cool (e.g. switch.heizplan_luften_<room>). Empty = none."
         }
       }
     },

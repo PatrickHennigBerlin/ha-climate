@@ -179,6 +179,8 @@ def _register_services(hass: HomeAssistant) -> None:
         vol.Required("room"): cv.string,
         vol.Optional("name"): cv.string,
         vol.Optional("fan_auto_switch"): vol.Any(cv.entity_id, ""),
+        # Lüften: an = in diesem Raum nicht kühlen (z. B. switch.heizplan_luften_<raum>), "" = keine
+        vol.Optional("vent_entity"): vol.Any(cv.entity_id, ""),
         vol.Optional("plan_enabled"): cv.boolean,
         vol.Optional("protect"): cv.boolean,
     }))

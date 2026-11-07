@@ -35,6 +35,13 @@ update_room:
           domain:
             - switch
             - input_boolean
+    vent_entity:
+      selector:
+        entity:
+          domain:
+            - switch
+            - input_boolean
+            - binary_sensor
     plan_enabled:
       selector:
         boolean:
