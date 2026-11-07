@@ -101,6 +101,10 @@
         "protect": {
           "name": "Hitzeschutz",
           "description": ""
+        },
+        "vent_entity": {
+          "name": "Lüften-Entität",
+          "description": "Solange an, kühlt dieser Raum nicht (z. B. switch.heizplan_luften_<raum>). Leer = keine."
         }
       }
     },
